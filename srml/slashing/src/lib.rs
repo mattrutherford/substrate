@@ -22,25 +22,19 @@
 //! In order to customize severity level and misconduct fees.
 //!
 
-mod types;
+// mod types;
 #[cfg(test)]
 mod tests;
-
-pub use types::Unresponsive;
 
 use parity_codec::Codec;
 use primitives::traits::{SimpleArithmetic, MaybeSerializeDebug};
 use srml_support::traits::Currency;
 
-type BalanceOf<T> = <<T as OnSlashing>::Currency as Currency<<T as system::Trait>::AccountId>>::Balance;
-type NegativeImbalanceOf<T> =
-	<<T as OnSlashing>::Currency as Currency<<T as system::Trait>::AccountId>>::NegativeImbalance;
-type Severity<T> = <<T as OnSlashing>::Misconduct as Misconduct>::Severity;
-
 /// Estimates severity level based on misconduct
-pub trait Misconduct {
+pub trait Misconduct<AccountId>: Currency<AccountId> {
 	/// Severity
-	type Severity: SimpleArithmetic + Codec + Copy + MaybeSerializeDebug + Default;
+	type Severity: SimpleArithmetic + Codec + Copy + MaybeSerializeDebug + Default + Into<<Self as Currency<AccountId>>::Balance>;
+
 	/// Increase severity level on misconduct.
 	fn on_misconduct(&mut self);
 	/// Decrease severity level after a certain point up to the implementor to determine when.
@@ -49,33 +43,21 @@ pub trait Misconduct {
 	fn severity(&self) -> Self::Severity;
 }
 
-/// Calculates the amount to be slashed
-pub trait Slashing: OnSlashing {
-	/// Calculates the amount to be slashed
-	fn amount(free_balance: BalanceOf<Self>, severity: Severity<Self>) -> BalanceOf<Self>;
+/// Slashing interface
+pub trait OnSlashing<AccountId, M: Misconduct<AccountId>> {
+	/// Slash validator `who` based on severity_level `severity`
+	fn on_slash(who: &AccountId, severity: M::Severity);
 }
 
-/// Wrapper interface sits between `Balance` and `Slashing`
-pub trait OnSlashing: system::Trait {
-	/// Balance
-	type Currency: Currency<Self::AccountId>;
-
+/// Slashing wrapper interface on top of `OnSlashing`
+pub trait Slashing<AccountId, M: Misconduct<AccountId>> {
 	/// Slashing
-	type Slashing: Slashing;
-
-	/// Misconduct
-	type Misconduct: Misconduct;
+	type Slash: OnSlashing<AccountId, M>;
 
 	/// Slash the given account `who`
-	//
-	// Note, `free_balance` could be fetched using `Currency::free_balance()`
-	// but it is an explicit parameter to make it easier to test.
-	fn slash(
-		who: &Self::AccountId,
-		free_balance: BalanceOf<Self>,
-		misconduct: &mut Self::Misconduct
-	) -> (NegativeImbalanceOf<Self>, BalanceOf<Self>);
+	fn slash(who: AccountId, misconduct: M);
 
 	/// Decrease severity level after a certain point up to the implementor to determine when.
-	fn on_signal(misconduct: &mut Self::Misconduct);
+	fn on_signal(misconduct: M);
 }
+

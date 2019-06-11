@@ -252,6 +252,7 @@ mod mock;
 mod tests;
 
 mod phragmen;
+mod slash;
 
 #[cfg(all(feature = "bench", test))]
 mod benches;
