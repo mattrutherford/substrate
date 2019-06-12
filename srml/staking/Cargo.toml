@@ -17,6 +17,9 @@ srml-slashing = { path = "../slashing", default-features = false }
 consensus = { package = "srml-consensus", path = "../consensus", default-features = false }
 system = { package = "srml-system", path = "../system", default-features = false }
 session = { package = "srml-session", path = "../session", default-features = false }
+# niklasad1 temp
+substrate-primitives = { path = "../../core/primitives" }
+balances = { package = "srml-balances", path = "../balances" }
 
 [dev-dependencies]
 substrate-primitives = { path = "../../core/primitives" }

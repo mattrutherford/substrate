@@ -28,12 +28,18 @@ mod tests;
 
 use parity_codec::Codec;
 use primitives::traits::{SimpleArithmetic, MaybeSerializeDebug};
-use srml_support::traits::Currency;
+use srml_support::traits::{Currency, LockableCurrency};
+
+type BalanceOf<T> = <<T as Misconduct>::Currency as Currency<<T as system::Trait>::AccountId>>::Balance;
 
 /// Estimates severity level based on misconduct
-pub trait Misconduct<AccountId>: Currency<AccountId> {
+pub trait Misconduct: system::Trait {
 	/// Severity
-	type Severity: SimpleArithmetic + Codec + Copy + MaybeSerializeDebug + Default + Into<<Self as Currency<AccountId>>::Balance>;
+	// probably need Into<BalanceOf<T>> ?!!!
+	type Severity: SimpleArithmetic + Codec + Copy + MaybeSerializeDebug + Default + Into<BalanceOf<Self>>;
+
+	/// Currency (inorder to inherit it from the system::Trait)
+	type Currency: LockableCurrency<Self::AccountId, Moment = Self::BlockNumber>;
 
 	/// Increase severity level on misconduct.
 	fn on_misconduct(&mut self);
@@ -44,20 +50,20 @@ pub trait Misconduct<AccountId>: Currency<AccountId> {
 }
 
 /// Slashing interface
-pub trait OnSlashing<AccountId, M: Misconduct<AccountId>> {
+pub trait OnSlashing<AccountId, Misconduct> {
 	/// Slash validator `who` based on severity_level `severity`
-	fn on_slash(who: &AccountId, severity: M::Severity);
+	fn on_slash(who: &AccountId, misconduct: Misconduct);
 }
 
 /// Slashing wrapper interface on top of `OnSlashing`
-pub trait Slashing<AccountId, M: Misconduct<AccountId>> {
+pub trait Slashing<AccountId, Misconduct> {
 	/// Slashing
-	type Slash: OnSlashing<AccountId, M>;
+	type Slash: OnSlashing<AccountId, Misconduct>;
 
 	/// Slash the given account `who`
-	fn slash(who: AccountId, misconduct: M);
+	fn slash(who: AccountId, misconduct: Misconduct);
 
 	/// Decrease severity level after a certain point up to the implementor to determine when.
-	fn on_signal(misconduct: M);
+	fn on_signal(misconduct: Misconduct);
 }
 
