@@ -22,6 +22,7 @@
 use std::{convert::TryFrom, str, panic};
 use tiny_keccak;
 use secp256k1;
+use std::time::Instant;
 
 use wasmi::{
 	Module, ModuleInstance, MemoryInstance, MemoryRef, TableRef, ImportsBuilder, ModuleRef,
