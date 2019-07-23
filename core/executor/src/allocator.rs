@@ -52,8 +52,9 @@ use std::convert::{TryFrom, TryInto};
 use std::ops::Range;
 use wasm_interface::{Pointer, WordSize};
 
-// The pointers need to be aligned to 8 bytes. This is because the
-// maximum value type handled by wasm32 is u64.
+use substrate_telemetry::{telemetry, PROFILING};
+
+// The pointers need to be aligned to 8 bytes.
 const ALIGNMENT: u32 = 8;
 
 // The pointer returned by `allocate()` needs to fulfill the alignment
@@ -74,6 +75,7 @@ pub struct FreeingBumpHeapAllocator {
 	heads: [u32; N],
 	ptr_offset: u32,
 	total_size: u32,
+	historic_max: u32,
 }
 
 /// Create an allocator error.
@@ -97,6 +99,7 @@ impl FreeingBumpHeapAllocator {
 			heads: [0; N],
 			ptr_offset,
 			total_size: 0,
+			historic_max: 0,
 		}
 	}
 
@@ -149,6 +152,12 @@ impl FreeingBumpHeapAllocator {
 
 		self.total_size = self.total_size + item_size + PREFIX_SIZE;
 		trace!(target: "wasm-heap", "Heap size is {} bytes after allocation", self.total_size);
+		if self.total_size > self.historic_max {
+			self.historic_max = self.total_size;
+			telemetry!(PROFILING; "profiling.wasm_max_mem";
+					"bytes" => self.historic_max
+				);
+		}
 
 		Ok(Pointer::new(self.ptr_offset + ptr))
 	}
