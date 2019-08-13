@@ -49,6 +49,7 @@ use executor::{RuntimeVersion, RuntimeInfo};
 use consensus::{
 	Error as ConsensusError, BlockImportParams,
 	ImportResult, BlockOrigin, ForkChoiceStrategy,
+	well_known_cache_keys::Id as CacheKeyId,
 	SelectChain, self,
 };
 
@@ -64,7 +65,6 @@ use crate::{
 	blockchain::{
 		self, Info as ChainInfo, Backend as ChainBackend,
 		HeaderBackend as ChainHeaderBackend, ProvideCache, Cache,
-		well_known_cache_keys::Id as CacheKeyId,
 	},
 	call_executor::{CallExecutor, LocalCallExecutor},
 	notifications::{StorageNotifications, StorageEventStream},
@@ -81,10 +81,10 @@ pub type ImportNotifications<Block> = mpsc::UnboundedReceiver<BlockImportNotific
 pub type FinalityNotifications<Block> = mpsc::UnboundedReceiver<FinalityNotification<Block>>;
 
 type StorageUpdate<B, Block> = <
-	<
-		<B as backend::Backend<Block, Blake2Hasher>>::BlockImportOperation
-			as BlockImportOperation<Block, Blake2Hasher>
-	>::State as state_machine::Backend<Blake2Hasher>>::Transaction;
+<
+<B as backend::Backend<Block, Blake2Hasher>>::BlockImportOperation
+as BlockImportOperation<Block, Blake2Hasher>
+>::State as state_machine::Backend<Blake2Hasher>>::Transaction;
 type ChangesUpdate<Block> = ChangesTrieTransaction<Blake2Hasher, NumberFor<Block>>;
 
 /// Execution strategies settings.
@@ -151,7 +151,7 @@ pub trait BlockchainEvents<Block: BlockT> {
 pub trait BlockBody<Block: BlockT> {
 	/// Get block body by ID. Returns `None` if the body is not stored.
 	fn block_body(&self,
-		id: &BlockId<Block>
+				  id: &BlockId<Block>
 	) -> error::Result<Option<Vec<<Block as BlockT>::Extrinsic>>>;
 }
 
@@ -159,7 +159,7 @@ pub trait BlockBody<Block: BlockT> {
 pub trait ProvideUncles<Block: BlockT> {
 	/// Gets the uncles of the block with `target_hash` going back `max_generation` ancestors.
 	fn uncles(&self, target_hash: Block::Hash, max_generation: NumberFor<Block>)
-		-> error::Result<Vec<Block::Header>>;
+			  -> error::Result<Vec<Block::Header>>;
 }
 
 /// Client info
@@ -314,8 +314,8 @@ impl<B, E, Block, RA> Client<B, E, Block, RA> where
 			let state_root = op.reset_storage(genesis_storage, children_genesis_storage)?;
 			let genesis_block = genesis::construct_genesis_block::<Block>(state_root.into());
 			info!("Initializing Genesis block/state (state: {}, header-hash: {})",
-				genesis_block.header().state_root(),
-				genesis_block.header().hash()
+				  genesis_block.header().state_root(),
+				  genesis_block.header().hash()
 			);
 			op.set_block_data(
 				genesis_block.deconstruct().0,
@@ -373,7 +373,7 @@ impl<B, E, Block, RA> Client<B, E, Block, RA> where
 
 	/// Given a `BlockId` and a key, return the value under the hash in that block.
 	pub fn storage_hash(&self, id: &BlockId<Block>, key: &StorageKey)
-		-> error::Result<Option<Block::Hash>> {
+						-> error::Result<Option<Block::Hash>> {
 		Ok(self.state_at(id)?
 			.storage_hash(&key.0).map_err(|e| error::Error::from_state(Box::new(e)))?
 		)
@@ -436,28 +436,24 @@ impl<B, E, Block, RA> Client<B, E, Block, RA> where
 	}
 
 	/// Reads storage value at a given block + key, returning read proof.
-	pub fn read_proof<I>(&self, id: &BlockId<Block>, keys: I) -> error::Result<Vec<Vec<u8>>> where
-		I: IntoIterator,
-		I::Item: AsRef<[u8]>,
-	{
+	pub fn read_proof(&self, id: &BlockId<Block>, key: &[u8]) -> error::Result<Vec<Vec<u8>>> {
 		self.state_at(id)
-			.and_then(|state| prove_read(state, keys)
+			.and_then(|state| prove_read(state, key)
+				.map(|(_, proof)| proof)
 				.map_err(Into::into))
 	}
 
 	/// Reads child storage value at a given block + storage_key + key, returning
 	/// read proof.
-	pub fn read_child_proof<I>(
+	pub fn read_child_proof(
 		&self,
 		id: &BlockId<Block>,
 		storage_key: &[u8],
-		keys: I,
-	) -> error::Result<Vec<Vec<u8>>> where
-		I: IntoIterator,
-		I::Item: AsRef<[u8]>,
-	{
+		key: &[u8]
+	) -> error::Result<Vec<Vec<u8>>> {
 		self.state_at(id)
-			.and_then(|state| prove_child_read(state, storage_key, keys)
+			.and_then(|state| prove_child_read(state, storage_key, key)
+				.map(|(_, proof)| proof)
 				.map_err(Into::into))
 	}
 
@@ -466,9 +462,9 @@ impl<B, E, Block, RA> Client<B, E, Block, RA> where
 	///
 	/// No changes are made.
 	pub fn execution_proof(&self,
-		id: &BlockId<Block>,
-		method: &str,
-		call_data: &[u8]
+						   id: &BlockId<Block>,
+						   method: &str,
+						   call_data: &[u8]
 	) -> error::Result<(Vec<u8>, Vec<Vec<u8>>)> {
 		let state = self.state_at(id)?;
 		let header = self.prepare_environment_block(id)?;
@@ -482,7 +478,7 @@ impl<B, E, Block, RA> Client<B, E, Block, RA> where
 
 	/// Get block hash by number.
 	pub fn block_hash(&self,
-		block_number: <<Block as BlockT>::Header as HeaderT>::Number
+					  block_number: <<Block as BlockT>::Header as HeaderT>::Number
 	) -> error::Result<Option<Block::Hash>> {
 		self.backend.blockchain().hash(block_number)
 	}
@@ -565,8 +561,8 @@ impl<B, E, Block, RA> Client<B, E, Block, RA> where
 			self.backend.blockchain().info().best_number,
 			storage_key.as_ref().map(|sk| sk.0.as_slice()),
 			&key.0)
-		.and_then(|r| r.map(|r| r.map(|(block, tx)| (block, tx))).collect::<Result<_, _>>())
-		.map_err(|err| error::Error::ChangesTrieAccessFailed(err))
+			.and_then(|r| r.map(|r| r.map(|(block, tx)| (block, tx))).collect::<Result<_, _>>())
+			.map_err(|err| error::Error::ChangesTrieAccessFailed(err))
 	}
 
 	/// Get proof for computation of (block, extrinsic) pairs where key has been changed at given blocks range.
@@ -691,7 +687,7 @@ impl<B, E, Block, RA> Client<B, E, Block, RA> where
 			storage_key.as_ref().map(|sk| sk.0.as_slice()),
 			&key.0,
 		)
-		.map_err(|err| error::Error::from(error::Error::ChangesTrieAccessFailed(err)))?;
+			.map_err(|err| error::Error::from(error::Error::ChangesTrieAccessFailed(err)))?;
 
 		// now gather proofs for all changes tries roots that were touched during key_changes_proof
 		// execution AND are unknown (i.e. replaced with CHT) to the requester
@@ -741,7 +737,7 @@ impl<B, E, Block, RA> Client<B, E, Block, RA> where
 		});
 		let roots = cht_range
 			.map(|num| self.header(&BlockId::Number(num))
-			.map(|block| block.and_then(|block| block.digest().log(DigestItem::as_changes_trie_root).cloned())));
+				.map(|block| block.and_then(|block| block.digest().log(DigestItem::as_changes_trie_root).cloned())));
 		let proof = cht::build_proof::<Block::Header, Blake2Hasher, _, _>(cht_size, cht_num, blocks, roots)?;
 		Ok(proof)
 	}
@@ -1271,7 +1267,7 @@ impl<B, E, Block, RA> Client<B, E, Block, RA> where
 
 	/// Get full block by id.
 	pub fn block(&self, id: &BlockId<Block>)
-		-> error::Result<Option<SignedBlock<Block>>>
+				 -> error::Result<Option<SignedBlock<Block>>>
 	{
 		Ok(match (self.header(id)?, self.body(id)?, self.justification(id)?) {
 			(Some(header), Some(extrinsics), justification) =>
@@ -1482,9 +1478,6 @@ impl<B, E, Block, RA> CallRuntimeAt<Block> for Client<B, E, Block, RA> where
 	}
 }
 
-/// NOTE: only use this implementation when you are sure there are NO consensus-level BlockImport
-/// objects. Otherwise, importing blocks directly into the client would be bypassing
-/// important verification work.
 impl<'a, B, E, Block, RA> consensus::BlockImport<Block> for &'a Client<B, E, Block, RA> where
 	B: backend::Backend<Block, Blake2Hasher>,
 	E: CallExecutor<Block, Blake2Hasher> + Clone + Send + Sync,
@@ -1494,13 +1487,6 @@ impl<'a, B, E, Block, RA> consensus::BlockImport<Block> for &'a Client<B, E, Blo
 
 	/// Import a checked and validated block. If a justification is provided in
 	/// `BlockImportParams` then `finalized` *must* be true.
-	///
-	/// NOTE: only use this implementation when there are NO consensus-level BlockImport
-	/// objects. Otherwise, importing blocks directly into the client would be bypassing
-	/// important verification work.
-	///
-	/// If you are not sure that there are no BlockImport objects provided by the consensus
-	/// algorithm, don't use this function.
 	fn import_block(
 		&mut self,
 		import_block: BlockImportParams<Block>,
@@ -1522,19 +1508,19 @@ impl<'a, B, E, Block, RA> consensus::BlockImport<Block> for &'a Client<B, E, Blo
 	) -> Result<ImportResult, Self::Error> {
 		match self.block_status(&BlockId::Hash(parent_hash))
 			.map_err(|e| ConsensusError::ClientImport(e.to_string()))?
-		{
-			BlockStatus::InChainWithState | BlockStatus::Queued => {},
-			BlockStatus::Unknown | BlockStatus::InChainPruned => return Ok(ImportResult::UnknownParent),
-			BlockStatus::KnownBad => return Ok(ImportResult::KnownBad),
-		}
+			{
+				BlockStatus::InChainWithState | BlockStatus::Queued => {},
+				BlockStatus::Unknown | BlockStatus::InChainPruned => return Ok(ImportResult::UnknownParent),
+				BlockStatus::KnownBad => return Ok(ImportResult::KnownBad),
+			}
 
 		match self.block_status(&BlockId::Hash(hash))
 			.map_err(|e| ConsensusError::ClientImport(e.to_string()))?
-		{
-			BlockStatus::InChainWithState | BlockStatus::Queued => return Ok(ImportResult::AlreadyInChain),
-			BlockStatus::Unknown | BlockStatus::InChainPruned => {},
-			BlockStatus::KnownBad => return Ok(ImportResult::KnownBad),
-		}
+			{
+				BlockStatus::InChainWithState | BlockStatus::Queued => return Ok(ImportResult::AlreadyInChain),
+				BlockStatus::Unknown | BlockStatus::InChainPruned => {},
+				BlockStatus::KnownBad => return Ok(ImportResult::KnownBad),
+			}
 
 		Ok(ImportResult::imported(false))
 	}
@@ -1609,9 +1595,9 @@ impl<B, E, Block, RA> Finalizer<Block, Blake2Hasher, B> for &Client<B, E, Block,
 }
 
 impl<B, E, Block, RA> BlockchainEvents<Block> for Client<B, E, Block, RA>
-where
-	E: CallExecutor<Block, Blake2Hasher>,
-	Block: BlockT<Hash=H256>,
+	where
+		E: CallExecutor<Block, Blake2Hasher>,
+		Block: BlockT<Hash=H256>,
 {
 	/// Get block import event stream.
 	fn import_notification_stream(&self) -> ImportNotifications<Block> {
@@ -1654,9 +1640,9 @@ impl<B, Block> Clone for LongestChain<B, Block> {
 }
 
 impl<B, Block> LongestChain<B, Block>
-where
-	B: backend::Backend<Block, Blake2Hasher>,
-	Block: BlockT<Hash=H256>,
+	where
+		B: backend::Backend<Block, Blake2Hasher>,
+		Block: BlockT<Hash=H256>,
 {
 	/// Instantiate a new LongestChain for Backend B
 	pub fn new(backend: Arc<B>) -> Self {
@@ -1668,12 +1654,127 @@ where
 
 	fn best_block_header(&self) -> error::Result<<Block as BlockT>::Header> {
 		let info = self.backend.blockchain().info();
-		let import_lock = self.backend.get_import_lock();
-		let best_hash = self.backend.blockchain().best_containing(info.best_hash, None, import_lock)?
+		let best_hash = self.best_containing(info.best_hash, None)?
 			.unwrap_or(info.best_hash);
 
 		Ok(self.backend.blockchain().header(BlockId::Hash(best_hash))?
 			.expect("given block hash was fetched from block in db; qed"))
+	}
+
+	/// Get the most recent block hash of the best (longest) chains
+	/// that contain block with the given `target_hash`.
+	///
+	/// The search space is always limited to blocks which are in the finalized
+	/// chain or descendents of it.
+	///
+	/// If `maybe_max_block_number` is `Some(max_block_number)`
+	/// the search is limited to block `numbers <= max_block_number`.
+	/// in other words as if there were no blocks greater `max_block_number`.
+	/// Returns `Ok(None)` if `target_hash` is not found in search space.
+	/// TODO: document time complexity of this, see [#1444](https://github.com/paritytech/substrate/issues/1444)
+	fn best_containing(
+		&self,
+		target_hash: Block::Hash,
+		maybe_max_number: Option<NumberFor<Block>>
+	) -> error::Result<Option<Block::Hash>> {
+		let target_header = {
+			match self.backend.blockchain().header(BlockId::Hash(target_hash))? {
+				Some(x) => x,
+				// target not in blockchain
+				None => { return Ok(None); },
+			}
+		};
+
+		if let Some(max_number) = maybe_max_number {
+			// target outside search range
+			if target_header.number() > &max_number {
+				return Ok(None);
+			}
+		}
+
+		let leaves = {
+			// ensure no blocks are imported during this code block.
+			// an import could trigger a reorg which could change the canonical chain.
+			// we depend on the canonical chain staying the same during this code block.
+			let _import_lock = self.backend.get_import_lock().lock();
+
+			let info = self.backend.blockchain().info();
+
+			let canon_hash = self.backend.blockchain().hash(*target_header.number())?
+				.ok_or_else(|| error::Error::from(format!("failed to get hash for block number {}", target_header.number())))?;
+
+			if canon_hash == target_hash {
+				// if a `max_number` is given we try to fetch the block at the
+				// given depth, if it doesn't exist or `max_number` is not
+				// provided, we continue to search from all leaves below.
+				if let Some(max_number) = maybe_max_number {
+					if let Some(header) = self.backend.blockchain().hash(max_number)? {
+						return Ok(Some(header));
+					}
+				}
+			} else if info.finalized_number >= *target_header.number() {
+				// header is on a dead fork.
+				return Ok(None);
+			}
+
+			self.backend.blockchain().leaves()?
+		};
+
+		// for each chain. longest chain first. shortest last
+		for leaf_hash in leaves {
+			// start at the leaf
+			let mut current_hash = leaf_hash;
+
+			// if search is not restricted then the leaf is the best
+			let mut best_hash = leaf_hash;
+
+			// go backwards entering the search space
+			// waiting until we are <= max_number
+			if let Some(max_number) = maybe_max_number {
+				loop {
+					let current_header = self.backend.blockchain().header(BlockId::Hash(current_hash.clone()))?
+						.ok_or_else(|| error::Error::from(format!("failed to get header for hash {}", current_hash)))?;
+
+					if current_header.number() <= &max_number {
+						best_hash = current_header.hash();
+						break;
+					}
+
+					current_hash = *current_header.parent_hash();
+				}
+			}
+
+			// go backwards through the chain (via parent links)
+			loop {
+				// until we find target
+				if current_hash == target_hash {
+					return Ok(Some(best_hash));
+				}
+
+				let current_header = self.backend.blockchain().header(BlockId::Hash(current_hash.clone()))?
+					.ok_or_else(|| error::Error::from(format!("failed to get header for hash {}", current_hash)))?;
+
+				// stop search in this chain once we go below the target's block number
+				if current_header.number() < target_header.number() {
+					break;
+				}
+
+				current_hash = *current_header.parent_hash();
+			}
+		}
+
+		// header may be on a dead fork -- the only leaves that are considered are
+		// those which can still be finalized.
+		//
+		// FIXME #1558 only issue this warning when not on a dead fork
+		warn!(
+			"Block {:?} exists in chain but not found when following all \
+			leaves backwards. Number limit = {:?}",
+			target_hash,
+			maybe_max_number,
+		);
+
+		Ok(None)
 	}
 
 	fn leaves(&self) -> Result<Vec<<Block as BlockT>::Hash>, error::Error> {
@@ -1682,9 +1783,9 @@ where
 }
 
 impl<B, Block> SelectChain<Block> for LongestChain<B, Block>
-where
-	B: backend::Backend<Block, Blake2Hasher>,
-	Block: BlockT<Hash=H256>,
+	where
+		B: backend::Backend<Block, Blake2Hasher>,
+		Block: BlockT<Hash=H256>,
 {
 
 	fn leaves(&self) -> Result<Vec<<Block as BlockT>::Hash>, ConsensusError> {
@@ -1693,7 +1794,7 @@ where
 	}
 
 	fn best_chain(&self)
-		-> Result<<Block as BlockT>::Header, ConsensusError>
+				  -> Result<<Block as BlockT>::Header, ConsensusError>
 	{
 		LongestChain::best_block_header(&self)
 			.map_err(|e| ConsensusError::ChainLookup(e.to_string()).into())
@@ -1704,8 +1805,7 @@ where
 		target_hash: Block::Hash,
 		maybe_max_number: Option<NumberFor<Block>>
 	) -> Result<Option<Block::Hash>, ConsensusError> {
-		let import_lock = self.backend.get_import_lock();
-		self.backend.blockchain().best_containing(target_hash, maybe_max_number, import_lock)
+		LongestChain::best_containing(self, target_hash, maybe_max_number)
 			.map_err(|e| ConsensusError::ChainLookup(e.to_string()).into())
 	}
 }
@@ -1778,12 +1878,12 @@ pub fn apply_aux<'a, 'b: 'a, 'c: 'a, B, Block, H, D, I>(
 	insert: I,
 	delete: D
 ) -> error::Result<()>
-where
-	Block: BlockT,
-	H: Hasher<Out=Block::Hash>,
-	B: backend::Backend<Block, H>,
-	I: IntoIterator<Item=&'a(&'c [u8], &'c [u8])>,
-	D: IntoIterator<Item=&'a &'b [u8]>,
+	where
+		Block: BlockT,
+		H: Hasher<Out=Block::Hash>,
+		B: backend::Backend<Block, H>,
+		I: IntoIterator<Item=&'a(&'c [u8], &'c [u8])>,
+		D: IntoIterator<Item=&'a &'b [u8]>,
 {
 	operation.op.insert_aux(
 		insert.into_iter()
@@ -1795,9 +1895,8 @@ where
 /// Utility methods for the client.
 pub mod utils {
 	use super::*;
-	use crate::{blockchain, error};
+	use crate::{backend::Backend, blockchain, error};
 	use primitives::H256;
-	use std::borrow::Borrow;
 
 	/// Returns a function for checking block ancestry, the returned function will
 	/// return `true` if the given hash (second parameter) is a descendent of the
@@ -1805,16 +1904,15 @@ pub mod utils {
 	/// represent the current block `hash` and its `parent hash`, if given the
 	/// function that's returned will assume that `hash` isn't part of the local DB
 	/// yet, and all searches in the DB will instead reference the parent.
-	pub fn is_descendent_of<'a, Block: BlockT<Hash=H256>, T, H: Borrow<H256> + 'a>(
-		client: &'a T,
-		current: Option<(H, H)>,
+	pub fn is_descendent_of<'a, B, E, Block: BlockT<Hash=H256>, RA>(
+		client: &'a Client<B, E, Block, RA>,
+		current: Option<(&'a H256, &'a H256)>,
 	) -> impl Fn(&H256, &H256) -> Result<bool, error::Error> + 'a
-		where T: ChainHeaderBackend<Block>,
+		where B: Backend<Block, Blake2Hasher>,
+			  E: CallExecutor<Block, Blake2Hasher> + Send + Sync,
 	{
 		move |base, hash| {
 			if base == hash { return Ok(false); }
-
-			let current = current.as_ref().map(|(c, p)| (c.borrow(), p.borrow()));
 
 			let mut hash = hash;
 			if let Some((current_hash, current_parent_hash)) = current {
@@ -1829,7 +1927,7 @@ pub mod utils {
 			}
 
 			let tree_route = blockchain::tree_route(
-				|id| client.header(id)?.ok_or_else(|| Error::UnknownBlock(format!("{:?}", id))),
+				|id| client.header(&id)?.ok_or_else(|| Error::UnknownBlock(format!("{:?}", id))),
 				BlockId::Hash(*hash),
 				BlockId::Hash(*base),
 			)?;
@@ -2506,7 +2604,7 @@ pub(crate) mod tests {
 			match actual_result == expected_result {
 				true => (),
 				false => panic!(format!("Failed test {}: actual = {:?}, expected = {:?}",
-					index, actual_result, expected_result)),
+										index, actual_result, expected_result)),
 			}
 		}
 	}
