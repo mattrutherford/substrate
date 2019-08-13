@@ -23,8 +23,6 @@ use crate::RuntimeInfo;
 use primitives::{Blake2Hasher, NativeOrEncoded, traits::{CodeExecutor, Externalities}};
 use log::{trace, warn};
 
-use std::time::Instant;
-
 use crate::RuntimesCache;
 
 thread_local! {
