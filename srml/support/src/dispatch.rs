@@ -909,12 +909,12 @@ macro_rules! decl_module {
 		#[allow(unreachable_code)]
 		$vis fn $name(
 			$origin: $origin_ty $(, $param: $param_ty )*
-		) -> $crate::dispatch::Result {
+		) -> $crate::dispatch::DispatchResult<$error_type> {
 			#[cfg(feature = "std")]
 			return $crate::dispatch::PROFILING.with(|profiling| {
-				if *profiling {
+				if *profiling && false  {
 					let before = std::time::Instant::now();
-					let result: $crate::dispatch::Result = (move || { { $( $impl )* } Ok(()) })();
+					let result: $crate::dispatch::DispatchResult<$error_type> = (move || { { $( $impl )* } Ok(()) })();
 					let after = std::time::Instant::now();
 					let ns = (after - before).as_nanos();
 					$crate::telemetry::telemetry!($crate::telemetry::PROFILING; "profiling.runtime";
@@ -951,29 +951,28 @@ macro_rules! decl_module {
 	) => {
 		$(#[doc = $doc_attr])*
 		$vis fn $name($origin: $origin_ty $(, $param: $param_ty )* ) -> $result {
-	        #[cfg(feature = "std")]
-			return $crate::dispatch::PROFILING.with(|profiling| {
-				if *profiling {
-					let before = std::time::Instant::now();
+			#[cfg(feature = "std")]
+            return $crate::dispatch::PROFILING.with(|profiling| {
+                if *profiling && false {
+                    let before = std::time::Instant::now();
                     let result: $result = (move || { $( $impl )* })();
-					let after = std::time::Instant::now();
-					let ns = (after - before).as_nanos();
-					$crate::telemetry::telemetry!($crate::telemetry::PROFILING; "profiling.runtime";
-						"mod" => module_path!(),
-						"fn" => stringify!($name),
-						"ns" => ns,
-						"is_ok" => result.is_ok()
-					);
-					result
-				} else {
-					$( $impl )*
-				}
-
-			});
-			#[cfg(not(feature = "std"))]
-			return {
-				$( $impl )*
-			};
+                    let after = std::time::Instant::now();
+                    let ns = (after - before).as_nanos();
+                    $crate::telemetry::telemetry!($crate::telemetry::PROFILING; "profiling.runtime";
+                    "mod" => module_path!(),
+                    "fn" => stringify!($name),
+                    "ns" => ns,
+                    "is_ok" => result.is_ok()
+                    );
+                    result
+                } else {
+                    $( $impl )*
+                }
+            });
+            #[cfg(not(feature = "std"))]
+            return {
+                $( $impl )*
+            };
 		}
 	};
 
@@ -1631,7 +1630,7 @@ macro_rules! __call_to_functions {
 /// Convert a list of functions into a list of `FunctionMetadata` items.
 #[macro_export]
 #[doc(hidden)]
-macro_rules! __functions_to_metadata {
+macro_rules! __functions_to_metadata{
 	(
 		$fn_id:expr;
 		$origin_type:ty;
@@ -1757,7 +1756,6 @@ macro_rules! __check_reserved_fn_name {
 // Do not complain about unused `dispatch` and `dispatch_aux`.
 #[allow(dead_code)]
 mod tests {
-
 	use super::*;
 	use crate::sr_primitives::traits::{OnInitialize, OnFinalize};
 	use sr_primitives::weights::{DispatchInfo, DispatchClass};
@@ -1801,72 +1799,72 @@ mod tests {
 	}
 
 	const EXPECTED_METADATA: &'static [FunctionMetadata] = &[
-				FunctionMetadata {
-					name: DecodeDifferent::Encode("aux_0"),
-					arguments: DecodeDifferent::Encode(&[]),
-					documentation: DecodeDifferent::Encode(&[
-						" Hi, this is a comment."
-					])
+		FunctionMetadata {
+			name: DecodeDifferent::Encode("aux_0"),
+			arguments: DecodeDifferent::Encode(&[]),
+			documentation: DecodeDifferent::Encode(&[
+				" Hi, this is a comment."
+			])
+		},
+		FunctionMetadata {
+			name: DecodeDifferent::Encode("aux_1"),
+			arguments: DecodeDifferent::Encode(&[
+				FunctionArgumentMetadata {
+					name: DecodeDifferent::Encode("_data"),
+					ty: DecodeDifferent::Encode("Compact<u32>")
+				}
+			]),
+			documentation: DecodeDifferent::Encode(&[]),
+		},
+		FunctionMetadata {
+			name: DecodeDifferent::Encode("aux_2"),
+			arguments: DecodeDifferent::Encode(&[
+				FunctionArgumentMetadata {
+					name: DecodeDifferent::Encode("_data"),
+					ty: DecodeDifferent::Encode("i32"),
 				},
-				FunctionMetadata {
-					name: DecodeDifferent::Encode("aux_1"),
-					arguments: DecodeDifferent::Encode(&[
-						FunctionArgumentMetadata {
-							name: DecodeDifferent::Encode("_data"),
-							ty: DecodeDifferent::Encode("Compact<u32>")
-						}
-					]),
-					documentation: DecodeDifferent::Encode(&[]),
+				FunctionArgumentMetadata {
+					name: DecodeDifferent::Encode("_data2"),
+					ty: DecodeDifferent::Encode("String"),
+				}
+			]),
+			documentation: DecodeDifferent::Encode(&[]),
+		},
+		FunctionMetadata {
+			name: DecodeDifferent::Encode("aux_3"),
+			arguments: DecodeDifferent::Encode(&[]),
+			documentation: DecodeDifferent::Encode(&[]),
+		},
+		FunctionMetadata {
+			name: DecodeDifferent::Encode("aux_4"),
+			arguments: DecodeDifferent::Encode(&[
+				FunctionArgumentMetadata {
+					name: DecodeDifferent::Encode("_data"),
+					ty: DecodeDifferent::Encode("i32"),
+				}
+			]),
+			documentation: DecodeDifferent::Encode(&[]),
+		},
+		FunctionMetadata {
+			name: DecodeDifferent::Encode("aux_5"),
+			arguments: DecodeDifferent::Encode(&[
+				FunctionArgumentMetadata {
+					name: DecodeDifferent::Encode("_data"),
+					ty: DecodeDifferent::Encode("i32"),
 				},
-				FunctionMetadata {
-					name: DecodeDifferent::Encode("aux_2"),
-					arguments: DecodeDifferent::Encode(&[
-						FunctionArgumentMetadata {
-							name: DecodeDifferent::Encode("_data"),
-							ty: DecodeDifferent::Encode("i32"),
-						},
-						FunctionArgumentMetadata {
-							name: DecodeDifferent::Encode("_data2"),
-							ty: DecodeDifferent::Encode("String"),
-						}
-					]),
-					documentation: DecodeDifferent::Encode(&[]),
-				},
-				FunctionMetadata {
-					name: DecodeDifferent::Encode("aux_3"),
-					arguments: DecodeDifferent::Encode(&[]),
-					documentation: DecodeDifferent::Encode(&[]),
-				},
-				FunctionMetadata {
-					name: DecodeDifferent::Encode("aux_4"),
-					arguments: DecodeDifferent::Encode(&[
-						FunctionArgumentMetadata {
-							name: DecodeDifferent::Encode("_data"),
-							ty: DecodeDifferent::Encode("i32"),
-						}
-					]),
-					documentation: DecodeDifferent::Encode(&[]),
-				},
-				FunctionMetadata {
-					name: DecodeDifferent::Encode("aux_5"),
-					arguments: DecodeDifferent::Encode(&[
-						FunctionArgumentMetadata {
-							name: DecodeDifferent::Encode("_data"),
-							ty: DecodeDifferent::Encode("i32"),
-						},
-						FunctionArgumentMetadata {
-							name: DecodeDifferent::Encode("_data2"),
-							ty: DecodeDifferent::Encode("Compact<u32>")
-						}
-					]),
-					documentation: DecodeDifferent::Encode(&[]),
-				},
-				FunctionMetadata {
-					name: DecodeDifferent::Encode("operational"),
-					arguments: DecodeDifferent::Encode(&[]),
-					documentation: DecodeDifferent::Encode(&[]),
-				},
-			];
+				FunctionArgumentMetadata {
+					name: DecodeDifferent::Encode("_data2"),
+					ty: DecodeDifferent::Encode("Compact<u32>")
+				}
+			]),
+			documentation: DecodeDifferent::Encode(&[]),
+		},
+		FunctionMetadata {
+			name: DecodeDifferent::Encode("operational"),
+			arguments: DecodeDifferent::Encode(&[]),
+			documentation: DecodeDifferent::Encode(&[]),
+		},
+	];
 
 	pub struct TraitImpl {}
 
