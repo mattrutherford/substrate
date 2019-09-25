@@ -69,8 +69,8 @@ pub use self::storage::{StorageValue, StorageMap, StorageLinkedMap, StorageDoubl
 pub use self::hashable::Hashable;
 pub use self::dispatch::{Parameter, Callable, IsSubType};
 pub use self::double_map::StorageDoubleMapWithHasher;
-pub use runtime_io::{print, storage_root, Printable};
-pub use sr_primitives::{self, ConsensusEngineId};
+pub use runtime_io::storage_root;
+pub use sr_primitives::{self, ConsensusEngineId, print, traits::Printable};
 
 
 /// Macro for easily creating a new implementation of the `Get` trait. Use similarly to
@@ -273,7 +273,8 @@ pub use serde::{Serialize, Deserialize};
 mod tests {
 	use super::*;
 	use codec::Codec;
-	use runtime_io::{with_externalities, Blake2Hasher};
+	use runtime_io::with_externalities;
+	use primitives::Blake2Hasher;
 	pub use srml_metadata::{
 		DecodeDifferent, StorageEntryMetadata, StorageMetadata, StorageEntryType,
 		StorageEntryModifier, DefaultByte, DefaultByteGetter, StorageHasher

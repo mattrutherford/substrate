@@ -34,7 +34,9 @@ use parking_lot::{Mutex, RwLock};
 use primitives::{Blake2Hasher, H256, Hasher};
 use rpc::{self, system::SystemInfo};
 use sr_primitives::{BuildStorage, generic::BlockId};
-use sr_primitives::traits::{Block as BlockT, ProvideRuntimeApi, NumberFor, One, Zero, Header, SaturatedConversion};
+use sr_primitives::traits::{
+	Block as BlockT, Extrinsic, ProvideRuntimeApi, NumberFor, One, Zero, Header, SaturatedConversion
+};
 use substrate_executor::{NativeExecutor, NativeExecutionDispatch};
 use serde::{Serialize, de::DeserializeOwned};
 use std::{io::{Read, Write, Seek}, marker::PhantomData, sync::Arc, sync::atomic::AtomicBool};
@@ -108,29 +110,18 @@ type TLightClient<TBl, TRtApi, TExecDisp> = Client<
 /// Light client backend type.
 type TLightBackend<TBl> = client::light::backend::Backend<
 	client_db::light::LightStorage<TBl>,
-	network::OnDemand<TBl>,
 	Blake2Hasher,
 >;
 
 /// Light call executor type.
-type TLightCallExecutor<TBl, TExecDisp> = client::light::call_executor::RemoteOrLocalCallExecutor<
-	TBl,
+type TLightCallExecutor<TBl, TExecDisp> = client::light::call_executor::GenesisCallExecutor<
 	client::light::backend::Backend<
 		client_db::light::LightStorage<TBl>,
-		network::OnDemand<TBl>,
 		Blake2Hasher
-	>,
-	client::light::call_executor::RemoteCallExecutor<
-		client::light::blockchain::Blockchain<
-			client_db::light::LightStorage<TBl>,
-			network::OnDemand<TBl>
-		>,
-		network::OnDemand<TBl>,
 	>,
 	client::LocalCallExecutor<
 		client::light::backend::Backend<
 			client_db::light::LightStorage<TBl>,
-			network::OnDemand<TBl>,
 			Blake2Hasher
 		>,
 		NativeExecutor<TExecDisp>
@@ -240,11 +231,10 @@ where TGen: Serialize + DeserializeOwned + BuildStorage {
 		let light_blockchain = client::light::new_light_blockchain(db_storage);
 		let fetch_checker = Arc::new(client::light::new_fetch_checker(light_blockchain.clone(), executor.clone()));
 		let fetcher = Arc::new(network::OnDemand::new(fetch_checker));
-		let backend = client::light::new_light_backend(light_blockchain, fetcher.clone());
+		let backend = client::light::new_light_backend(light_blockchain);
 		let remote_blockchain = backend.remote_blockchain();
 		let client = Arc::new(client::light::new_light(
 			backend.clone(),
-			fetcher.clone(),
 			&config.chain_spec,
 			executor,
 		)?);
@@ -459,15 +449,22 @@ impl<TBl, TRtApi, TCfg, TGen, TCl, TFchr, TSc, TImpQu, TFprb, TFpp, TNetP, TExPo
 	/// Defines which import queue to use.
 	pub fn with_import_queue_and_opt_fprb<UImpQu, UFprb>(
 		self,
-		builder: impl FnOnce(&Configuration<TCfg, TGen>, Arc<TCl>, Arc<Backend>, Option<TSc>, Arc<TExPool>)
-			-> Result<(UImpQu, Option<UFprb>), Error>
+		builder: impl FnOnce(
+			&Configuration<TCfg, TGen>,
+			Arc<TCl>,
+			Arc<Backend>,
+			Option<TFchr>,
+			Option<TSc>,
+			Arc<TExPool>,
+		) -> Result<(UImpQu, Option<UFprb>), Error>
 	) -> Result<ServiceBuilder<TBl, TRtApi, TCfg, TGen, TCl, TFchr, TSc, UImpQu, UFprb, TFpp,
 		TNetP, TExPool, TRpc, TRpcB, Backend>, Error>
-	where TSc: Clone {
+	where TSc: Clone, TFchr: Clone {
 		let (import_queue, fprb) = builder(
 			&self.config,
 			self.client.clone(),
 			self.backend.clone(),
+			self.fetcher.clone(),
 			self.select_chain.clone(),
 			self.transaction_pool.clone()
 		)?;
@@ -494,12 +491,21 @@ impl<TBl, TRtApi, TCfg, TGen, TCl, TFchr, TSc, TImpQu, TFprb, TFpp, TNetP, TExPo
 	/// Defines which import queue to use.
 	pub fn with_import_queue_and_fprb<UImpQu, UFprb>(
 		self,
-		builder: impl FnOnce(&Configuration<TCfg, TGen>, Arc<TCl>, Arc<Backend>, Option<TSc>, Arc<TExPool>)
-			-> Result<(UImpQu, UFprb), Error>
+		builder: impl FnOnce(
+			&Configuration<TCfg, TGen>,
+			Arc<TCl>,
+			Arc<Backend>,
+			Option<TFchr>,
+			Option<TSc>,
+			Arc<TExPool>,
+		) -> Result<(UImpQu, UFprb), Error>
 	) -> Result<ServiceBuilder<TBl, TRtApi, TCfg, TGen, TCl, TFchr, TSc, UImpQu, UFprb, TFpp,
 			TNetP, TExPool, TRpc, TRpcB, Backend>, Error>
-	where TSc: Clone {
-		self.with_import_queue_and_opt_fprb(|cfg, cl, b, sc, tx| builder(cfg, cl, b, sc, tx).map(|(q, f)| (q, Some(f))))
+	where TSc: Clone, TFchr: Clone {
+		self.with_import_queue_and_opt_fprb(|cfg, cl, b, f, sc, tx|
+			builder(cfg, cl, b, f, sc, tx)
+				.map(|(q, f)| (q, Some(f)))
+		)
 	}
 
 	/// Defines which transaction pool to use.
@@ -817,12 +823,9 @@ ServiceBuilder<
 			TBl
 		>,
 	>, Error> {
-		let mut config = self.config;
-		session::generate_initial_session_keys(
-			self.client.clone(),
-			config.dev_key_seed.clone().map(|s| vec![s]).unwrap_or_default()
-		)?;
-		let (
+		let ServiceBuilder {
+			marker: _,
+			mut config,
 			client,
 			fetcher,
 			backend,
@@ -836,21 +839,12 @@ ServiceBuilder<
 			rpc_extensions,
 			dht_event_tx,
 			rpc_builder,
-		) = (
-			self.client,
-			self.fetcher,
-			self.backend,
-			self.keystore,
-			self.select_chain,
-			self.import_queue,
-			self.finality_proof_request_builder,
-			self.finality_proof_provider,
-			self.network_protocol,
-			self.transaction_pool,
-			self.rpc_extensions,
-			self.dht_event_tx,
-			self.rpc_builder,
-		);
+		} = self;
+
+		session::generate_initial_session_keys(
+			client.clone(),
+			config.dev_key_seed.clone().map(|s| vec![s]).unwrap_or_default()
+		)?;
 
 		new_impl!(
 			TBl,
@@ -937,7 +931,13 @@ pub(crate) fn maintain_transaction_pool<Api, Backend, Block, Executor, PoolApi>(
 	for r in retracted {
 		if let Some(block) = client.block(&BlockId::hash(*r))? {
 			let extrinsics = block.block.extrinsics();
-			if let Err(e) = transaction_pool.submit_at(id, extrinsics.iter().cloned(), true) {
+			if let Err(e) = transaction_pool.submit_at(
+				id,
+				extrinsics.iter().filter(|e| {
+					e.is_signed().unwrap_or(false)
+				}).cloned(),
+				true
+			) {
 				warn!("Error re-submitting transactions: {:?}", e);
 			}
 		}
