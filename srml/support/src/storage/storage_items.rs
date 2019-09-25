@@ -807,7 +807,7 @@ mod test_append_and_len {
 		with_externalities(&mut TestExternalities::default(), || {
 			assert_eq!(OptionVecWithDefault::get(), Some(vec![6, 9]));
 			assert_eq!(OptionVec::get(), None);
-			assert_eq!(JustVec::get(), vec![]);
+			assert_eq!(JustVec::get(), vec![0;0]);
 		});
 	}
 
@@ -873,7 +873,7 @@ mod test_append_and_len {
 	fn len_works_for_default() {
 		with_externalities(&mut TestExternalities::default(), || {
 			// vec
-			assert_eq!(JustVec::get(), vec![]);
+			assert_eq!(JustVec::get(), vec![0;0]);
 			assert_eq!(JustVec::decode_len(), Ok(0));
 
 			assert_eq!(JustVecWithDefault::get(), vec![6, 9]);
@@ -886,7 +886,7 @@ mod test_append_and_len {
 			assert_eq!(OptionVecWithDefault::decode_len(), Ok(2));
 
 			// map
-			assert_eq!(MapVec::get(0), vec![]);
+			assert_eq!(MapVec::get(0), vec![0;0]);
 			assert_eq!(MapVec::decode_len(0), Ok(0));
 
 			assert_eq!(MapVecWithDefault::get(0), vec![6, 9]);
@@ -899,7 +899,7 @@ mod test_append_and_len {
 			assert_eq!(OptionMapVecWithDefault::decode_len(0), Ok(2));
 
 			// linked map
-			assert_eq!(LinkedMapVec::get(0), vec![]);
+			assert_eq!(LinkedMapVec::get(0), vec![0;0]);
 			assert_eq!(LinkedMapVec::decode_len(0), Ok(0));
 
 			assert_eq!(LinkedMapVecWithDefault::get(0), vec![6, 9]);

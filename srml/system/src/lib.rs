@@ -1469,7 +1469,7 @@ mod tests {
 				.validate(&1, CALL, op, len)
 				.unwrap()
 				.priority;
-			assert_eq!(priority, Bounded::max_value());
+			assert_eq!(priority, <u64 as Bounded>::max_value());
 		})
 	}
 
