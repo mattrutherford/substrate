@@ -912,7 +912,7 @@ macro_rules! decl_module {
 		) -> $crate::dispatch::DispatchResult<$error_type> {
 			#[cfg(feature = "std")]
 			return $crate::dispatch::PROFILING.with(|profiling| {
-				if *profiling && false  {
+				if *profiling {
 					let before = std::time::Instant::now();
 					let result: $crate::dispatch::DispatchResult<$error_type> = (move || { { $( $impl )* } Ok(()) })();
 					let after = std::time::Instant::now();
@@ -953,7 +953,7 @@ macro_rules! decl_module {
 		$vis fn $name($origin: $origin_ty $(, $param: $param_ty )* ) -> $result {
 			#[cfg(feature = "std")]
             return $crate::dispatch::PROFILING.with(|profiling| {
-                if *profiling && false {
+                if *profiling {
                     let before = std::time::Instant::now();
                     let result: $result = (move || { $( $impl )* })();
                     let after = std::time::Instant::now();
