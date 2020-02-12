@@ -297,3 +297,52 @@ fn send_grafana(span_datum: SpanDatum) {
 		log::warn!("Unable to send metrics to grafana: {:?}", e);
 	}
 }
+
+#[derive(Debug)]
+struct BasicSpanDatum {
+	id: u64,
+	name: String,
+	target: String,
+	start_time: Instant,
+}
+
+pub struct BasicProfiler {
+	next_id: AtomicU64,
+	span_data: Mutex<HashMap<u64, BasicSpanDatum>>,
+}
+
+impl BasicProfiler {
+	pub fn new() -> Self {
+		BasicProfiler{
+			next_id: AtomicU64::new(1),
+			span_data: Mutex::new(HashMap::new())
+		}
+	}
+
+	pub fn create_span(&mut self, target: String, name: String) -> u64 {
+		let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+		let span_datum = BasicSpanDatum {
+			id,
+			target,
+			name,
+			start_time: Instant::now(),
+		};
+		self.span_data.lock().insert(id, span_datum);
+		id
+	}
+
+	pub fn exit_span(&self, id: u64) {
+		let span_datum = self.span_data.lock().remove(&id).expect("span went in, so it must come out again.");
+		let time = (Instant::now() - span_datum.start_time).as_nanos();
+		telemetry!(SUBSTRATE_INFO; "tracing.profiling";
+			"name" => &span_datum.name,
+			"target" => &span_datum.target,
+			"time" => &time
+		);
+//		log::info!("WASM_TRACING: {}: {}, time: {}",
+//			span_datum.target,
+//			span_datum.name,
+//			time
+//		);
+	}
+}

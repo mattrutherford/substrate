@@ -7054,9 +7054,12 @@ name = "sp-io"
 version = "2.0.0"
 dependencies = [
  "hash-db",
+ "lazy_static",
  "libsecp256k1",
  "log 0.4.8",
  "parity-scale-codec",
+ "parking_lot 0.10.0",
+ "sc-tracing",
  "sp-core",
  "sp-externalities",
  "sp-runtime-interface",
