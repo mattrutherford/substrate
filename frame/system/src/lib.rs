@@ -834,7 +834,9 @@ impl<T: Trait> Module<T> {
 
 	/// Increment a particular account's nonce by 1.
 	pub fn inc_account_nonce(who: &T::AccountId) {
+		let span_id = sp_io::profiling::register_span(module_path!(), "inc_account_nonce");
 		<AccountNonce<T>>::insert(who, Self::account_nonce(who) + T::Index::one());
+		sp_io::profiling::exit_span(span_id);
 	}
 
 	/// Note what the extrinsic data of the current extrinsic index is. If this
@@ -1052,7 +1054,9 @@ impl<T: Trait> SignedExtension for CheckNonce<T> {
 		_info: Self::DispatchInfo,
 		_len: usize,
 	) -> Result<(), TransactionValidityError> {
+		let span_id = sp_io::profiling::register_span(module_path!(), "<AccountNonce<T>>::get");
 		let expected = <AccountNonce<T>>::get(who);
+		sp_io::profiling::exit_span(span_id);
 		if self.0 != expected {
 			return Err(
 				if self.0 < expected {
@@ -1063,7 +1067,9 @@ impl<T: Trait> SignedExtension for CheckNonce<T> {
 			)
 		}
 
+		let span_id = sp_io::profiling::register_span(module_path!(), "<AccountNonce<T>>::insert");
 		<AccountNonce<T>>::insert(who, expected + T::Index::one());
+		sp_io::profiling::exit_span(span_id);
 		Ok(())
 	}
 
