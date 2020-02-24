@@ -59,9 +59,10 @@ impl AsyncProfiler {
 							assert_eq!(enter_span.id, exit_span.id, "Span ids not equal {:?},{:?}", enter_span, exit_span);
 							let time = exit_span.time - enter_span.time;
 							if let Err(e) = writeln!(file, "{},{},{}",
-								   enter_span.target,
-								   enter_span.name,
-								   time) {
+								enter_span.target,
+								enter_span.name,
+								time)
+							{
 								eprintln!("{}", e.to_string());
 							};
 						}

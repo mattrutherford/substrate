@@ -1029,15 +1029,20 @@ impl<T: Trait<I>, I: Instance> Currency<T::AccountId> for Module<T, I> where
 				// but better to be safe than sorry.
 				to_account.free = to_account.free.checked_add(&value).ok_or(Error::<T, I>::Overflow)?;
 
+				let span_ed = sp_io::profiling::register_span(module_path!(), "ExistentialDeposit::get");
 				let ed = T::ExistentialDeposit::get();
+				sp_io::profiling::exit_span(span_ed);
+
 				ensure!(to_account.total() >= ed, Error::<T, I>::ExistentialDeposit);
 
+				let span_ensure_can_withdraw = sp_io::profiling::register_span(module_path!(), "ensure_can_withdraw");
 				Self::ensure_can_withdraw(
 					transactor,
 					value,
 					WithdrawReason::Transfer.into(),
 					from_account.free,
 				)?;
+				sp_io::profiling::exit_span(span_ensure_can_withdraw);
 
 				let allow_death = existence_requirement == ExistenceRequirement::AllowDeath;
 				ensure!(allow_death || from_account.free >= ed, Error::<T, I>::KeepAlive);
@@ -1047,7 +1052,9 @@ impl<T: Trait<I>, I: Instance> Currency<T::AccountId> for Module<T, I> where
 		})?;
 
 		// Emit transfer event.
+		let span_deposit_event = sp_io::profiling::register_span(module_path!(), "deposit_event");
 		Self::deposit_event(RawEvent::Transfer(transactor.clone(), dest.clone(), value));
+		sp_io::profiling::exit_span(spanspan_deposit_event_ed);
 
 		Ok(())
 	}

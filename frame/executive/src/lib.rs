@@ -275,26 +275,39 @@ where
 		encoded_len: usize,
 		to_note: Option<Vec<u8>>,
 	) -> ApplyExtrinsicResult {
+
+//		let span_id3 = sp_io::profiling::register_span(module_path!(), "test_no_op_span_overhead");
+//		sp_io::profiling::exit_span(span_id3);
+
 		let span_id = sp_io::profiling::register_span(module_path!(), "apply_extrinsic_with_len");
 		// Verify that the signature is good.
-		let span_id2 = sp_io::profiling::register_span(module_path!(), "uxt.check");
+		let uxt_span = sp_io::profiling::register_span(module_path!(), "uxt.check");
 		let xt = uxt.check(&Default::default())?;
-		sp_io::profiling::exit_span(span_id2);
+		sp_io::profiling::exit_span(uxt_span);
 
 		// We don't need to make sure to `note_extrinsic` only after we know it's going to be
 		// executed to prevent it from leaking in storage since at this point, it will either
 		// execute or panic (and revert storage changes).
 		if let Some(encoded) = to_note {
+			let note_extrinsic_span = sp_io::profiling::register_span(module_path!(), "note_extrinsic");
 			<frame_system::Module<System>>::note_extrinsic(encoded);
+			sp_io::profiling::exit_span(note_extrinsic_span);
 		}
 
 		// AUDIT: Under no circumstances may this function panic from here onwards.
 
 		// Decode parameters and dispatch
+		let dispatch_info_span = sp_io::profiling::register_span(module_path!(), "get_dispatch_info");
 		let dispatch_info = xt.get_dispatch_info();
+		sp_io::profiling::exit_span(dispatch_info_span);
+
 		let r = Applyable::apply::<UnsignedValidator>(xt, dispatch_info, encoded_len)?;
 
+
+		let note_applied_extrinsic_span = sp_io::profiling::register_span(module_path!(), "note_applied_extrinsic");
 		<frame_system::Module<System>>::note_applied_extrinsic(&r, encoded_len as u32, dispatch_info);
+		sp_io::profiling::exit_span(note_applied_extrinsic_span);
+
 		sp_io::profiling::exit_span(span_id);
 		Ok(r)
 	}
