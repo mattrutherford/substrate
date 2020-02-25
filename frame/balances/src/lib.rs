@@ -1054,7 +1054,7 @@ impl<T: Trait<I>, I: Instance> Currency<T::AccountId> for Module<T, I> where
 		// Emit transfer event.
 		let span_deposit_event = sp_io::profiling::register_span(module_path!(), "deposit_event");
 		Self::deposit_event(RawEvent::Transfer(transactor.clone(), dest.clone(), value));
-		sp_io::profiling::exit_span(spanspan_deposit_event_ed);
+		sp_io::profiling::exit_span(span_deposit_event);
 
 		Ok(())
 	}

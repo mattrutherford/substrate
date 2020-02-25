@@ -22,8 +22,8 @@ pallet-session = { version = "2.0.0-dev", features = ["historical"], path = "../
 pallet-authorship = { version = "2.0.0-dev", default-features = false, path = "../authorship" }
 sp-application-crypto = { version = "2.0.0-dev", default-features = false, path = "../../primitives/application-crypto" }
 
-frame-benchmarking = { version = "2.0.0", default-features = false, path = "../benchmarking" }
-pallet-indices = { version = "2.0.0", default-features = false, path = "../indices" }
+frame-benchmarking = { version = "2.0.0-dev", default-features = false, path = "../benchmarking" }
+pallet-indices = { version = "2.0.0-dev", default-features = false, path = "../indices" }
 rand_chacha = { version = "0.2", default-features = false  }
 rand = { version = "0.7", default-features = false }
 
