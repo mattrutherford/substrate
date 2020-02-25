@@ -20,6 +20,12 @@ frame-support = { version = "2.0.0-dev", default-features = false, path = "../su
 frame-system = { version = "2.0.0-dev", default-features = false, path = "../system" }
 pallet-session = { version = "2.0.0-dev", features = ["historical"], path = "../session", default-features = false }
 pallet-authorship = { version = "2.0.0-dev", default-features = false, path = "../authorship" }
+sp-application-crypto = { version = "2.0.0-dev", default-features = false, path = "../../primitives/application-crypto" }
+
+frame-benchmarking = { version = "2.0.0", default-features = false, path = "../benchmarking" }
+pallet-indices = { version = "2.0.0", default-features = false, path = "../indices" }
+rand_chacha = { version = "0.2", default-features = false  }
+rand = { version = "0.7", default-features = false }
 
 [dev-dependencies]
 sp-core = { version = "2.0.0-dev", path = "../../primitives/core" }
@@ -27,13 +33,16 @@ pallet-balances = { version = "2.0.0-dev", path = "../balances" }
 pallet-timestamp = { version = "2.0.0-dev", path = "../timestamp" }
 pallet-staking-reward-curve = { version = "2.0.0-dev",  path = "../staking/reward-curve" }
 substrate-test-utils = { version = "2.0.0-dev", path = "../../test-utils" }
+parking_lot = { version = "0.10.0" }
+env_logger = "0.7.1"
+
 
 [features]
 migrate = []
+testing-utils = ["std"]
 default = ["std"]
 std = [
 	"serde",
-	"sp-keyring",
 	"codec/std",
 	"sp-std/std",
 	"sp-phragmen/std",
@@ -44,4 +53,7 @@ std = [
 	"pallet-session/std",
 	"frame-system/std",
 	"pallet-authorship/std",
+	"pallet-indices/std",
+	"frame-benchmarking/std",
+
 ]
