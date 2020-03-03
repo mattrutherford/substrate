@@ -1,4 +1,3 @@
-use std::time::{Instant, Duration};
 use std::collections::HashMap;
 use std::thread::JoinHandle;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -54,17 +53,24 @@ impl AsyncProfiler {
 							spans.push(s);
 						}
 						SpanPhase::Exit(exit_span) => {
-							let enter_span = spans.pop()
-								.expect("Shouldn't be possible to exit a span already exited");
-							assert_eq!(enter_span.id, exit_span.id, "Span ids not equal {:?},{:?}", enter_span, exit_span);
-							let time = exit_span.time - enter_span.time;
-							if let Err(e) = writeln!(file, "{},{},{}",
-								enter_span.target,
-								enter_span.name,
-								time)
-							{
-								eprintln!("{}", e.to_string());
-							};
+							loop {
+								let enter_span = spans.pop()
+									.expect("Shouldn't be possible to exit a span already exited");
+								assert!(enter_span.id >= exit_span.id, "EnterSpan.id < ExitSpan.id :\n{:?}\n{:?}", enter_span, exit_span);
+								let time = exit_span.time - enter_span.time;
+								let is_ok = enter_span.id == exit_span.id;
+								if let Err(e) = writeln!(file, "{},{},{}",
+														 enter_span.target,
+														 format!("{}({})", enter_span.name, is_ok),
+														 time,
+								)
+								{
+									eprintln!("{}", e.to_string());
+								};
+								if is_ok {
+									break;
+								}
+							}
 						}
 					}
 				}
