@@ -57,6 +57,24 @@ use codec::{Encode, Decode};
 #[cfg(feature = "std")]
 use sp_externalities::{ExternalitiesExt, Externalities};
 
+#[cfg(feature = "std")]
+#[macro_use]
+extern crate lazy_static;
+#[cfg(feature = "std")]
+use parking_lot::Mutex;
+#[cfg(feature = "std")]
+use sp_profiler::Profiler;
+#[cfg(feature = "std")]
+lazy_static! {
+	static ref PROFILER: Mutex<Box<dyn sp_profiler::Profiler>> = match std::env::var("SP_PROFILER") {
+		Ok(v) => match v.to_lowercase().as_ref() {
+			"async" => Mutex::new(Box::new(sp_profiler::AsyncProfiler::new(std::env::var("SP_PROFILER_FILENAME").unwrap_or("profiling_data.csv".to_string())))),
+			_ => Mutex::new(Box::new(sp_profiler::BasicProfiler::new())),
+		},
+		_ => Mutex::new(Box::new(sp_profiler::BasicProfiler::new())),
+	};
+}
+
 /// Error verifying ECDSA signature
 #[derive(Encode, Decode)]
 pub enum EcdsaVerifyError {
@@ -263,7 +281,10 @@ pub trait Storage {
 	///
 	/// Returns the SCALE encoded hash.
 	fn root(&mut self) -> Vec<u8> {
-		self.storage_root()
+		let id = PROFILER.lock().create_span("Storage".to_string(), "storage_root".to_string());
+		let res = self.storage_root();
+		PROFILER.lock().exit_span(id);
+		res
 	}
 
 	/// "Commit" all existing operations and compute the resulting child storage root.
@@ -288,8 +309,11 @@ pub trait Storage {
 	///
 	/// Returns an `Option` that holds the SCALE encoded hash.
 	fn changes_root(&mut self, parent_hash: &[u8]) -> Option<Vec<u8>> {
-		self.storage_changes_root(parent_hash)
-			.expect("Invalid `parent_hash` given to `changes_root`.")
+		let id = PROFILER.lock().create_span("Storage".to_string(), "changes_root".to_string());
+		let res = self.storage_changes_root(parent_hash)
+			.expect("Invalid `parent_hash` given to `changes_root`.");
+		PROFILER.lock().exit_span(id);
+		res
 	}
 
 	/// Get the next key in storage after the given one in lexicographic order.
@@ -777,29 +801,16 @@ pub trait Logging {
 	}
 }
 
-#[cfg(feature = "std")]
-#[macro_use]
-extern crate lazy_static;
-#[cfg(feature = "std")]
-use parking_lot::Mutex;
-#[cfg(feature = "std")]
-use sp_profiler::Profiler;
-#[cfg(feature = "std")]
-lazy_static! {
-	static ref PROFILER: Mutex<Box<dyn sp_profiler::Profiler>> = match std::env::var("SP_PROFILER") {
-		Ok(v) => match v.to_lowercase().as_ref() {
-			"async" => Mutex::new(Box::new(sp_profiler::AsyncProfiler::new(std::env::var("SP_PROFILER_FILENAME").unwrap_or("profiling_data.csv".to_string())))),
-			_ => Mutex::new(Box::new(sp_profiler::BasicProfiler::new())),
-		},
-		_ => Mutex::new(Box::new(sp_profiler::BasicProfiler::new())),
-	};
-}
-
 /// Interface that provides functions for profiling the runtime.
 #[runtime_interface]
 pub trait Profiling {
 	fn register_span(target: &str, name: &str) -> u64 {
 		PROFILER.lock().create_span(target.into(), name.into())
+	}
+
+
+	fn register_span_u64(target: &str, name: &str, u: u64) -> u64 {
+		register_span(target, &format!("{}:{}", name, u))
 	}
 
 	fn exit_span(id: u64) {

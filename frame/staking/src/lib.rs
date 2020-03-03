@@ -1776,6 +1776,7 @@ impl<T: Trait> Module<T> {
 		claimed_score: PhragmenScore,
 	) -> Result<(), Error<T>> {
 		// discard early solutions
+		let span = sp_io::profiling::register_span_u64(module_path!(), "check_and_replace_solution", winners.len() as u64);
 		match Self::era_election_status() {
 			ElectionStatus::Close => Err(Error::<T>::PhragmenEarlySubmission)?,
 			ElectionStatus::Open(_) => { /* Open and no solutions received. Allowed. */ },
@@ -1798,13 +1799,17 @@ impl<T: Trait> Module<T> {
 		ensure!(winners.len() as u32 == desired_winners, Error::<T>::PhragmenBogusWinnerCount);
 
 		// decode snapshot validators.
+		let span_snapshot = sp_io::profiling::register_span(module_path!(), "check_and_replace_solution_snapshot");
 		let snapshot_validators = Self::snapshot_validators()
 			.ok_or(Error::<T>::SnapshotUnavailable)?;
+		sp_io::profiling::exit_span(span_snapshot);
 
 		// check if all winners were legit; this is rather cheap. Replace with accountId.
+		let span_winners = sp_io::profiling::register_span(module_path!(), "check_and_replace_solution_winners_into_iter");
 		let winners = winners.into_iter().map(|widx| {
 			snapshot_validators.get(widx as usize).cloned().ok_or(Error::<T>::PhragmenBogusWinner)
 		}).collect::<Result<Vec<T::AccountId>, Error<T>>>()?;
+		sp_io::profiling::exit_span(span_winners);
 
 		// decode the rest of the snapshot.
 		let snapshot_nominators = <Module<T>>::snapshot_nominators()
@@ -1821,6 +1826,7 @@ impl<T: Trait> Module<T> {
 		};
 
 		// un-compact.
+		let span_compact = sp_io::profiling::register_span(module_path!(), "check_and_replace_solution_compact");
 		let assignments = compact_assignments.into_assignment(
 			nominator_at,
 			validator_at,
@@ -1832,10 +1838,12 @@ impl<T: Trait> Module<T> {
 			);
 			Error::<T>::PhragmenBogusCompact
 		})?;
+		sp_io::profiling::exit_span(span_compact);
 
 		// check all nominators actually including the claimed vote. Also check correct self votes.
 		// Note that we assume all validators and nominators in `assignments` are properly bonded,
 		// because they are coming from the snapshot via a given index.
+		let span_assignments = sp_io::profiling::register_span_u64(module_path!(), "check_and_replace_solution_assignments_check", assignments.len() as u64);
 		for Assignment { who, distribution } in assignments.iter() {
 			let is_validator = <Validators<T>>::contains_key(&who);
 			let maybe_nomination = Self::nominators(&who);
@@ -1878,20 +1886,25 @@ impl<T: Trait> Module<T> {
 				);
 			}
 		}
+		sp_io::profiling::exit_span(span_assignments);
 
 		// convert into staked assignments.
+		let span_staked_assignments = sp_io::profiling::register_span(module_path!(), "check_and_replace_solution_staked_assignments");
 		let staked_assignments = sp_phragmen::assignment_ratio_to_staked(
 			assignments,
 			Self::slashable_balance_of_extended,
 		);
+		sp_io::profiling::exit_span(span_staked_assignments);
 
 		// build the support map thereof in order to evaluate.
 		// OPTIMIZATION: loop to create the staked assignments but it would bloat the code. Okay for
 		// now as it does not add to the complexity order.
+		let span_build_support_map = sp_io::profiling::register_span(module_path!(), "check_and_replace_solution_build_support_map");
 		let (supports, num_error) = build_support_map::<T::AccountId>(
 			&winners,
 			&staked_assignments,
 		);
+		sp_io::profiling::exit_span(span_build_support_map);
 		// This technically checks that all targets in all nominators were among the winners.
 		ensure!(num_error == 0, Error::<T>::PhragmenBogusEdge);
 
@@ -1904,6 +1917,7 @@ impl<T: Trait> Module<T> {
 			<T::CurrencyToVote as Convert<ExtendedBalance, BalanceOf<T>>>::convert(e);
 		let mut slot_stake: BalanceOf<T> = Bounded::max_value();
 
+		let span_exposures = sp_io::profiling::register_span(module_path!(), "check_and_replace_solution_exposures");
 		let exposures = supports.into_iter().map(|(validator, support)| {
 			let mut others = Vec::new();
 			let mut own: BalanceOf<T> = Zero::zero();
@@ -1926,20 +1940,24 @@ impl<T: Trait> Module<T> {
 			}
 			(validator, exposure)
 		}).collect::<Vec<(T::AccountId, Exposure<_, _>)>>();
+		sp_io::profiling::exit_span(span_exposures);
 
 		debug::native::info!(
 			target: "staking",
 			"A better solution has been validated and stored on chain.",
 		);
 
+		let span_put_election_result = sp_io::profiling::register_span(module_path!(), "check_and_replace_solution_put_election_result");
 		<QueuedElected<T>>::put(ElectionResult {
 			elected_stashes: winners,
 			compute,
 			exposures,
 			slot_stake,
 		});
-		QueuedScore::put(submitted_score);
+		sp_io::profiling::exit_span(span_put_election_result);
 
+		QueuedScore::put(submitted_score);
+		sp_io::profiling::exit_span(span);
 		Ok(())
 	}
 

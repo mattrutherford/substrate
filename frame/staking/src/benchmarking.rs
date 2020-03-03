@@ -331,47 +331,47 @@ impl<T: Trait> BenchmarkingSetup<T, Call<T>, RawOrigin<T::AccountId>> for Submit
 	fn components(&self) -> Vec<(BenchmarkParameter, u32, u32)> {
 		vec![
 			// number of nominators
-			(BenchmarkParameter::N, 100, 10_000),
+			(BenchmarkParameter::n, 100, 10_000),
 			// number of validator candidates
-			(BenchmarkParameter::V, 100, 5000),
+			(BenchmarkParameter::v, 100, 5000),
 			// num to elect
-			(BenchmarkParameter::E, 100, 1000),
+			(BenchmarkParameter::e, 100, 1000),
 			// edge per vote
-			(BenchmarkParameter::Z, 2, 16),
+			(BenchmarkParameter::z, 2, 16),
 			// mode
-			(BenchmarkParameter::M, 0, 2),
+			(BenchmarkParameter::m, 0, 2),
 		]
 	}
 	#[cfg(test)]
 	fn components(&self) -> Vec<(BenchmarkParameter, u32, u32)> {
 		vec![
 			// number of nominators
-			(BenchmarkParameter::N, 10, 1000),
+			(BenchmarkParameter::n, 10, 1000),
 			// number of validator candidates
-			(BenchmarkParameter::V, 10, 200),
+			(BenchmarkParameter::v, 10, 200),
 			// num to elect
-			(BenchmarkParameter::E, 20, 100),
+			(BenchmarkParameter::e, 20, 100),
 			// edge per vote
-			(BenchmarkParameter::Z, 2, 16),
+			(BenchmarkParameter::z, 2, 16),
 			// mode
-			(BenchmarkParameter::M, 0, 2),
+			(BenchmarkParameter::m, 0, 2),
 		]
 	}
 
 	fn instance(&self, components: &[(BenchmarkParameter, u32)])
 		-> Result<(Call<T>, RawOrigin<T::AccountId>), &'static str>
 	{
-		let num_validators = components.iter().find(|&c| c.0 == BenchmarkParameter::V).unwrap().1;
-		let num_nominators = components.iter().find(|&c| c.0 == BenchmarkParameter::N).unwrap().1;
-		let edge_per_voter = components.iter().find(|&c| c.0 == BenchmarkParameter::Z).unwrap().1;
+		let num_validators = components.iter().find(|&c| c.0 == BenchmarkParameter::v).unwrap().1;
+		let num_nominators = components.iter().find(|&c| c.0 == BenchmarkParameter::n).unwrap().1;
+		let edge_per_voter = components.iter().find(|&c| c.0 == BenchmarkParameter::z).unwrap().1;
 		let mode: BenchmarkingMode = unsafe {
-			let mode_num = components.iter().find(|&c| c.0 == BenchmarkParameter::M).unwrap().1;
+			let mode_num = components.iter().find(|&c| c.0 == BenchmarkParameter::m).unwrap().1;
 			let mode: BenchmarkingMode = sp_std::mem::transmute(mode_num);
 			MODE = mode;
 			mode
 		};
 		let do_reduce: bool = true;
-		let to_elect: u32 = components.iter().find(|&c| c.0 == BenchmarkParameter::E).unwrap().1;
+		let to_elect: u32 = components.iter().find(|&c| c.0 == BenchmarkParameter::e).unwrap().1;
 
 		sp_std::if_std! {
 			println!("++ instance with params {} / {} / {} / {:?} / {}",
@@ -465,12 +465,12 @@ impl<T: Trait> Benchmarking<BenchmarkResults> for Module<T> where T::Lookup: Sta
 		let mut results: Vec<BenchmarkResults> = Vec::new();
 		for (name, low, high) in components.iter() {
 			// Create up to `STEPS` steps for that component between high and low.
-			let step_size = if *name == BenchmarkParameter::M {
+			let step_size = if *name == BenchmarkParameter::m {
 				1
 			} else {
 				((high - low) / steps).max(1)
 			};
-			let num_of_steps = if *name == BenchmarkParameter::M {
+			let num_of_steps = if *name == BenchmarkParameter::m {
 				3
 			} else {
 				(high - low) / step_size

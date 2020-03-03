@@ -180,6 +180,9 @@ macro_rules! impl_benchmark {
 							// Run the benchmark.
 							let start = $crate::benchmarking::current_time();
 							call.dispatch(caller.into())?;
+
+							sp_io::storage::root();
+
 							let finish = $crate::benchmarking::current_time();
 							let elapsed = finish - start;
 							results.push((c.clone(), elapsed));
