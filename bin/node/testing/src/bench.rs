@@ -44,6 +44,7 @@ use node_runtime::{
 	UncheckedExtrinsic,
 	MinimumPeriod,
 	BalancesCall,
+	SystemCall,
 	AccountId,
 	Signature,
 };
@@ -211,11 +212,8 @@ impl BenchDb {
 			let signed = self.keyring.sign(
 				CheckedExtrinsic {
 					signed: Some((sender, signed_extra(0, 1*DOLLARS))),
-					function: Call::Balances(
-						BalancesCall::transfer(
-							pallet_indices::address::Address::Id(receiver),
-							1*DOLLARS
-						)
+					function: Call::System(
+						SystemCall::remark(vec![0u8;0])
 					),
 				},
 				version,
