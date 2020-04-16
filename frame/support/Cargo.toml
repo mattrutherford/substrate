@@ -6,14 +6,18 @@ edition = "2018"
 license = "GPL-3.0"
 homepage = "https://substrate.dev"
 repository = "https://github.com/paritytech/substrate/"
+description = "Support code for the runtime."
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 log = "0.4"
 serde = { version = "1.0.101", optional = true, features = ["derive"] }
-codec = { package = "parity-scale-codec", version = "1.0.6", default-features = false, features = ["derive"] }
+codec = { package = "parity-scale-codec", version = "1.3.0", default-features = false, features = ["derive"] }
 frame-metadata = { version = "11.0.0-dev", default-features = false, path = "../metadata" }
 sp-std = { version = "2.0.0-dev", default-features = false, path = "../../primitives/std" }
-sp-io ={ path = "../../primitives/io", default-features = false , version = "2.0.0-dev"}
+sp-io = { version = "2.0.0-dev", default-features = false, path = "../../primitives/io" }
 sp-runtime = { version = "2.0.0-dev", default-features = false, path = "../../primitives/runtime" }
 sp-core = { version = "2.0.0-dev", default-features = false, path = "../../primitives/core" }
 sp-arithmetic = { version = "2.0.0-dev", default-features = false, path = "../../primitives/arithmetic" }
@@ -48,3 +52,4 @@ std = [
 ]
 nightly = []
 strict = []
+runtime-benchmarks = []

@@ -16,13 +16,12 @@
 
 //! Timestamp pallet benchmarking.
 
+#![cfg(feature = "runtime-benchmarks")]
+
 use super::*;
-
 use sp_std::prelude::*;
-
 use frame_system::RawOrigin;
 use frame_benchmarking::benchmarks;
-use sp_runtime::traits::Dispatchable;
 
 const MAX_TIME: u32 = 100;
 
@@ -34,4 +33,18 @@ benchmarks! {
 	set {
 		let n in ...;
 	}: _(RawOrigin::None, n.into())
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::tests::{new_test_ext, Test};
+	use frame_support::assert_ok;
+
+	#[test]
+	fn test_benchmarks() {
+		new_test_ext().execute_with(|| {
+			assert_ok!(test_benchmark_set::<Test>());
+		});
+	}
 }

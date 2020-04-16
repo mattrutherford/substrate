@@ -48,7 +48,7 @@ use node_runtime::{
 	AccountId,
 	Signature,
 };
-use sp_core::ExecutionContext;
+use sp_core::{ExecutionContext, blake2_256};
 use sp_api::ProvideRuntimeApi;
 use sp_block_builder::BlockBuilder;
 use sp_inherents::InherentData;
@@ -56,7 +56,8 @@ use sc_client_api::{
 	ExecutionStrategy,
 	execution_extensions::{ExecutionExtensions, ExecutionStrategies},
 };
-use sp_core::{Pair, Public, sr25519};
+use sp_core::{Pair, Public, sr25519, ed25519};
+use sc_block_builder::BlockBuilderProvider;
 
 /// Keyring full of accounts for benching.
 ///
@@ -67,7 +68,22 @@ use sp_core::{Pair, Public, sr25519};
 ///     //endowed-user//N
 #[derive(Clone)]
 pub struct BenchKeyring {
-	accounts: BTreeMap<AccountId, sr25519::Pair>,
+	accounts: BTreeMap<AccountId, BenchPair>,
+}
+
+#[derive(Clone)]
+enum BenchPair {
+	Sr25519(sr25519::Pair),
+	Ed25519(ed25519::Pair),
+}
+
+impl BenchPair {
+	fn sign(&self, payload: &[u8]) -> Signature {
+		match self {
+			Self::Sr25519(pair) => pair.sign(payload).into(),
+			Self::Ed25519(pair) => pair.sign(payload).into(),
+		}
+	}
 }
 
 /// Pre-initialized benchmarking database.
@@ -82,7 +98,7 @@ pub struct BenchDb {
 impl Clone for BenchDb {
 	fn clone(&self) -> Self {
 		let keyring = self.keyring.clone();
-		let dir = tempdir::TempDir::new("sub-bench").expect("temp dir creation failed");
+		let dir = tempfile::tempdir().expect("temp dir creation failed");
 
 		let seed_dir = self.directory_guard.0.path();
 
@@ -109,19 +125,33 @@ impl Clone for BenchDb {
 	}
 }
 
+/// Type of block for generation
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum BlockType {
+	/// Bunch of random transfers.
+	RandomTransfers(usize),
+	/// Bunch of random transfers that drain all of the source balance.
+	RandomTransfersReaping(usize),
+}
+
+impl BlockType {
+	/// Number of transactions for this block type.
+	pub fn transactions(&self) -> usize {
+		match self {
+			Self::RandomTransfers(v) | Self::RandomTransfersReaping(v) => *v,
+		}
+	}
+}
+
 impl BenchDb {
 	/// New immutable benchmarking database.
 	///
-	/// This will generate database files in random temporary directory
-	/// and keep it there until struct is dropped.
-	///
-	/// You can `clone` this database or you can `create_context` from it
-	/// (which also do `clone`) to run actual operation against new database
-	/// which will be identical to this.
-	pub fn new(keyring_length: usize) -> Self {
-		let keyring = BenchKeyring::new(keyring_length);
+	/// See [`new`] method documentation for more information about the purpose
+	/// of this structure.
+	pub fn with_key_types(keyring_length: usize, key_types: KeyTypes) -> Self {
+		let keyring = BenchKeyring::new(keyring_length, key_types);
 
-		let dir = tempdir::TempDir::new("sub-bench").expect("temp dir creation failed");
+		let dir = tempfile::tempdir().expect("temp dir creation failed");
 		log::trace!(
 			target: "bench-logistics",
 			"Created seed db at {}",
@@ -131,6 +161,18 @@ impl BenchDb {
 		let directory_guard = Guard(dir);
 
 		BenchDb { keyring, directory_guard }
+	}
+
+	/// New immutable benchmarking database.
+	///
+	/// This will generate database files in random temporary directory
+	/// and keep it there until struct is dropped.
+	///
+	/// You can `clone` this database or you can `create_context` from it
+	/// (which also do `clone`) to run actual operation against new database
+	/// which will be identical to this.
+	pub fn new(keyring_length: usize) -> Self {
+		Self::with_key_types(keyring_length, KeyTypes::Sr25519)
 	}
 
 	// This should return client that is doing everything that full node
@@ -143,26 +185,28 @@ impl BenchDb {
 			state_cache_size: 16*1024*1024,
 			state_cache_child_ratio: Some((0, 100)),
 			pruning: PruningMode::ArchiveAll,
-			source: sc_client_db::DatabaseSettingsSrc::Path {
+			source: sc_client_db::DatabaseSettingsSrc::RocksDb {
 				path: dir.into(),
-				cache_size: None,
+				cache_size: 512,
 			},
 		};
 
 		let (client, backend) = sc_client_db::new_client(
 			db_config,
-			NativeExecutor::new(WasmExecutionMethod::Compiled, None),
+			NativeExecutor::new(WasmExecutionMethod::Compiled, None, 8),
 			&keyring.generate_genesis(),
 			None,
 			None,
 			ExecutionExtensions::new(profile.into_execution_strategies(), None),
+			sp_core::tasks::executor(),
+			None,
 		).expect("Should not fail");
 
 		(client, backend)
 	}
 
 	/// Generate new block using this database.
-	pub fn generate_block(&mut self, transactions: usize) -> Block {
+	pub fn generate_block(&mut self, block_type: BlockType) -> Block {
 		let (client, _backend) = Self::bench_client(
 			self.directory_guard.path(),
 			Profile::Wasm,
@@ -202,7 +246,7 @@ impl BenchDb {
 
 		let mut iteration = 0;
 		let start = std::time::Instant::now();
-		for _ in 0..transactions {
+		for _ in 0..block_type.transactions() {
 
 			let sender = self.keyring.at(iteration);
 			let receiver = get_account_id_from_seed::<sr25519::Public>(
@@ -263,17 +307,35 @@ impl BenchDb {
 	}
 }
 
+/// Key types to be used in benching keyring
+pub enum KeyTypes {
+	/// sr25519 signing keys
+	Sr25519,
+	/// ed25519 signing keys
+	Ed25519,
+}
+
 impl BenchKeyring {
 	/// New keyring.
 	///
 	/// `length` is the number of accounts generated.
-	pub fn new(length: usize) -> Self {
+	pub fn new(length: usize, key_types: KeyTypes) -> Self {
 		let mut accounts = BTreeMap::new();
 
 		for n in 0..length {
 			let seed = format!("//endowed-user/{}", n);
-			let pair = sr25519::Pair::from_string(&seed, None).expect("failed to generate pair");
-			let account_id = AccountPublic::from(pair.public()).into_account();
+			let (account_id, pair) = match key_types {
+				KeyTypes::Sr25519 => {
+					let pair = sr25519::Pair::from_string(&seed, None).expect("failed to generate pair");
+					let account_id = AccountPublic::from(pair.public()).into_account();
+					(account_id, BenchPair::Sr25519(pair))
+				},
+				KeyTypes::Ed25519 => {
+					let pair = ed25519::Pair::from_seed(&blake2_256(seed.as_bytes()));
+					let account_id = AccountPublic::from(pair.public()).into_account();
+					(account_id, BenchPair::Ed25519(pair))
+				},
+			};
 			accounts.insert(account_id, pair);
 		}
 
@@ -355,7 +417,7 @@ impl Profile {
 	}
 }
 
-struct Guard(tempdir::TempDir);
+struct Guard(tempfile::TempDir);
 
 impl Guard {
 	fn path(&self) -> &Path {

@@ -2,17 +2,21 @@
 name = "node-template"
 version = "2.0.0-dev"
 authors = ["Anonymous"]
+description = "Substrate Node template"
 edition = "2018"
 license = "Unlicense"
 build = "build.rs"
 homepage = "https://substrate.dev"
 repository = "https://github.com/paritytech/substrate/"
 
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
 [[bin]]
 name = "node-template"
 
 [dependencies]
-futures = "0.3.1"
+futures = "0.3.4"
 log = "0.4.8"
 structopt = "0.3.8"
 
@@ -27,14 +31,14 @@ sc-network = { version = "0.8.0-dev", path = "../../../client/network" }
 sc-consensus-aura = { version = "0.8.0-dev", path = "../../../client/consensus/aura" }
 sp-consensus-aura = { version = "0.8.0-dev", path = "../../../primitives/consensus/aura" }
 sp-consensus = { version = "0.8.0-dev", path = "../../../primitives/consensus/common" }
-grandpa = { version = "0.8.0-dev", package = "sc-finality-grandpa", path = "../../../client/finality-grandpa" }
-grandpa-primitives = { version = "2.0.0-dev", package = "sp-finality-grandpa", path = "../../../primitives/finality-grandpa" }
+sc-finality-grandpa = { version = "0.8.0-dev", path = "../../../client/finality-grandpa" }
+sp-finality-grandpa = { version = "2.0.0-dev", path = "../../../primitives/finality-grandpa" }
 sc-client = { version = "0.8.0-dev", path = "../../../client/" }
+sc-client-api = { version = "2.0.0-dev", path = "../../../client/api" }
 sp-runtime = { version = "2.0.0-dev", path = "../../../primitives/runtime" }
-sc-basic-authorship = { path = "../../../client/basic-authorship" , version = "0.8.0-dev"}
+sc-basic-authorship = { path = "../../../client/basic-authorship", version = "0.8.0-dev"}
 
 node-template-runtime = { version = "2.0.0-dev", path = "../runtime" }
 
 [build-dependencies]
-vergen = "3.0.4"
-build-script-utils = { version = "2.0.0-dev", package = "substrate-build-script-utils", path = "../../../utils/build-script-utils" }
+substrate-build-script-utils = { version = "2.0.0-dev", path = "../../../utils/build-script-utils" }

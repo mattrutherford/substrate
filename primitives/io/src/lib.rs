@@ -307,7 +307,8 @@ pub trait Storage {
 	///
 	/// The hashing algorithm is defined by the `Block`.
 	///
-	/// Returns an `Option` that holds the SCALE encoded hash.
+	/// Returns an `Some(_)` which holds the SCALE encoded hash or `None` when
+	/// changes trie is disabled.
 	fn changes_root(&mut self, parent_hash: &[u8]) -> Option<Vec<u8>> {
 		let id = PROFILER.lock().create_span("Storage".to_string(), "changes_root".to_string());
 		let res = self.storage_changes_root(parent_hash)
@@ -390,7 +391,7 @@ pub trait Misc {
 
 		self.extension::<CallInWasmExt>()
 			.expect("No `CallInWasmExt` associated for the current context!")
-			.call_in_wasm(wasm, "Core_version", &[], &mut ext)
+			.call_in_wasm(wasm, None, "Core_version", &[], &mut ext)
 			.ok()
 	}
 }
@@ -434,8 +435,9 @@ pub trait Crypto {
 		self.extension::<KeystoreExt>()
 			.expect("No `keystore` associated for the current context!")
 			.read()
-			.ed25519_key_pair(id, &pub_key)
-			.map(|k| k.sign(msg))
+			.sign_with(id, &pub_key.into(), msg)
+			.map(|sig| ed25519::Signature::from_slice(sig.as_slice()))
+			.ok()
 	}
 
 	/// Verify an `ed25519` signature.
@@ -486,13 +488,23 @@ pub trait Crypto {
 		self.extension::<KeystoreExt>()
 			.expect("No `keystore` associated for the current context!")
 			.read()
-			.sr25519_key_pair(id, &pub_key)
-			.map(|k| k.sign(msg))
+			.sign_with(id, &pub_key.into(), msg)
+			.map(|sig| sr25519::Signature::from_slice(sig.as_slice()))
+			.ok()
+	}
+
+	/// Verify an `sr25519` signature.
+	///
+	/// Returns `true` when the verification in successful regardless of
+	/// signature version.
+	fn sr25519_verify(sig: &sr25519::Signature, msg: &[u8], pubkey: &sr25519::Public) -> bool {
+		sr25519::Pair::verify_deprecated(sig, msg, pubkey)
 	}
 
 	/// Verify an `sr25519` signature.
 	///
 	/// Returns `true` when the verification in successful.
+	#[version(2)]
 	fn sr25519_verify(sig: &sr25519::Signature, msg: &[u8], pubkey: &sr25519::Public) -> bool {
 		sr25519::Pair::verify(sig, msg, pubkey)
 	}

@@ -6,6 +6,11 @@ authors = ["Parity Technologies <admin@parity.io>"]
 edition = "2018"
 homepage = "https://substrate.dev"
 repository = "https://github.com/paritytech/substrate/"
+description = "Substrate externalities abstraction"
+documentation = "https://docs.rs/sp-externalities"
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 sp-storage = { version = "2.0.0-dev", path = "../storage" }

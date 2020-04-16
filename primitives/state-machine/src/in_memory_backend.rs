@@ -20,6 +20,7 @@ use crate::{
 	StorageKey, StorageValue, StorageCollection,
 	trie_backend::TrieBackend,
 	backend::{Backend, insert_into_memory_db},
+	stats::UsageInfo,
 };
 use std::{error, fmt, collections::{BTreeMap, HashMap}, marker::PhantomData, ops};
 use hash_db::Hasher;
@@ -357,16 +358,27 @@ impl<H: Hasher> Backend<H> for InMemory<H> where H::Out: Codec {
 		self.trie = Some(TrieBackend::new(mdb, root));
 		self.trie.as_ref()
 	}
+
+	fn register_overlay_stats(&mut self, _stats: &crate::stats::StateMachineStats) { }
+
+	fn usage_info(&self) -> UsageInfo {
+		UsageInfo::empty()
+	}
+
+	fn wipe(&self) -> Result<(), Self::Error> {
+		Ok(())
+	}
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use sp_runtime::traits::BlakeTwo256;
 
 	/// Assert in memory backend with only child trie keys works as trie backend.
 	#[test]
 	fn in_memory_with_child_trie_only() {
-		let storage = InMemory::<sp_core::Blake2Hasher>::default();
+		let storage = InMemory::<BlakeTwo256>::default();
 		let child_info = OwnedChildInfo::new_default(b"unique_id_1".to_vec());
 		let mut storage = storage.update(
 			vec![(

@@ -19,7 +19,7 @@ use crate::*;
 use codec::Decode;
 use frame_support::{
 	assert_ok, impl_outer_origin, parameter_types,
-	weights::{GetDispatchInfo, Weight},
+	weights::Weight,
 };
 use sp_core::{
 	H256,
@@ -50,10 +50,10 @@ parameter_types! {
 }
 impl frame_system::Trait for Test {
 	type Origin = Origin;
+	type Call = ();
 	type Index = u64;
 	type BlockNumber = u64;
 	type Hash = H256;
-	type Call = ();
 	type Hashing = BlakeTwo256;
 	type AccountId = sp_core::sr25519::Public;
 	type Lookup = IdentityLookup<Self::AccountId>;
@@ -61,13 +61,14 @@ impl frame_system::Trait for Test {
 	type Event = ();
 	type BlockHashCount = BlockHashCount;
 	type MaximumBlockWeight = MaximumBlockWeight;
+	type DbWeight = ();
 	type MaximumBlockLength = MaximumBlockLength;
 	type AvailableBlockRatio = AvailableBlockRatio;
 	type Version = ();
 	type ModuleToIndex = ();
-	type OnReapAccount = ();
-	type OnNewAccount = ();
 	type AccountData = ();
+	type OnNewAccount = ();
+	type OnKilledAccount = ();
 }
 
 type Extrinsic = TestXt<Call<Test>, ()>;
@@ -94,6 +95,7 @@ impl frame_system::offchain::CreateTransaction<Test, Extrinsic> for Test {
 parameter_types! {
 	pub const GracePeriod: u64 = 5;
 	pub const UnsignedInterval: u64 = 128;
+	pub const UnsignedPriority: u64 = 1 << 20;
 }
 
 impl Trait for Test {
@@ -103,6 +105,7 @@ impl Trait for Test {
 	type SubmitUnsignedTransaction = SubmitTransaction;
 	type GracePeriod = GracePeriod;
 	type UnsignedInterval = UnsignedInterval;
+	type UnsignedPriority = UnsignedPriority;
 }
 
 type Example = Module<Test>;
@@ -132,7 +135,7 @@ fn should_make_http_call_and_parse_result() {
 		// when
 		let price = Example::fetch_price().unwrap();
 		// then
-		assert_eq!(price, 15522);
+		assert_eq!(price, 15523);
 	});
 }
 
@@ -164,7 +167,7 @@ fn should_submit_signed_transaction_on_chain() {
 		assert!(pool_state.read().transactions.is_empty());
 		let tx = Extrinsic::decode(&mut &*tx).unwrap();
 		assert_eq!(tx.signature.unwrap().0, 0);
-		assert_eq!(tx.call, Call::submit_price(15522));
+		assert_eq!(tx.call, Call::submit_price(15523));
 	});
 }
 
@@ -186,17 +189,8 @@ fn should_submit_unsigned_transaction_on_chain() {
 		assert!(pool_state.read().transactions.is_empty());
 		let tx = Extrinsic::decode(&mut &*tx).unwrap();
 		assert_eq!(tx.signature, None);
-		assert_eq!(tx.call, Call::submit_price_unsigned(1, 15522));
+		assert_eq!(tx.call, Call::submit_price_unsigned(1, 15523));
 	});
-}
-
-#[test]
-fn weights_work() {
-	// must have a default weight.
-	let default_call = <Call<Test>>::submit_price(10);
-	let info = default_call.get_dispatch_info();
-	// aka. `let info = <Call<Test> as GetDispatchInfo>::get_dispatch_info(&default_call);`
-	assert_eq!(info.weight, 10_000);
 }
 
 fn price_oracle_response(state: &mut testing::OffchainState) {
@@ -207,4 +201,20 @@ fn price_oracle_response(state: &mut testing::OffchainState) {
 		sent: true,
 		..Default::default()
 	});
+}
+
+#[test]
+fn parse_price_works() {
+	let test_data = vec![
+		("{\"USD\":6536.92}", Some(653692)),
+		("{\"USD\":65.92}", Some(6592)),
+		("{\"USD\":6536.924565}", Some(653692)),
+		("{\"USD\":6536}", Some(653600)),
+		("{\"USD2\":6536}", None),
+		("{\"USD\":\"6432\"}", None),
+	];
+
+	for (json, expected) in test_data {
+		assert_eq!(expected, Example::parse_price(json));
+	}
 }

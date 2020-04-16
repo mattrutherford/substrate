@@ -17,31 +17,32 @@
 //! State backend that's useful for benchmarking
 
 use std::sync::Arc;
-use std::path::PathBuf;
 use std::cell::{Cell, RefCell};
-use rand::Rng;
+use std::collections::HashMap;
 
 use hash_db::{Prefix, Hasher};
 use sp_trie::{MemoryDB, prefixed_key};
 use sp_core::storage::ChildInfo;
-use sp_runtime::traits::{Block as BlockT, HasherFor};
+use sp_runtime::traits::{Block as BlockT, HashFor};
 use sp_runtime::Storage;
 use sp_state_machine::{DBValue, backend::Backend as StateBackend};
 use kvdb::{KeyValueDB, DBTransaction};
-use kvdb_rocksdb::{Database, DatabaseConfig};
+use crate::storage_cache::{CachingState, SharedCache, new_shared_cache};
 
 type DbState<B> = sp_state_machine::TrieBackend<
-	Arc<dyn sp_state_machine::Storage<HasherFor<B>>>, HasherFor<B>
+	Arc<dyn sp_state_machine::Storage<HashFor<B>>>, HashFor<B>
 >;
+
+type State<B> = CachingState<DbState<B>, B>;
 
 struct StorageDb<Block: BlockT> {
 	db: Arc<dyn KeyValueDB>,
 	_block: std::marker::PhantomData<Block>,
 }
 
-impl<Block: BlockT> sp_state_machine::Storage<HasherFor<Block>> for StorageDb<Block> {
+impl<Block: BlockT> sp_state_machine::Storage<HashFor<Block>> for StorageDb<Block> {
 	fn get(&self, key: &Block::Hash, prefix: Prefix) -> Result<Option<DBValue>, String> {
-		let key = prefixed_key::<HasherFor<Block>>(key, prefix);
+		let key = prefixed_key::<HashFor<Block>>(key, prefix);
 		self.db.get(0, &key)
 			.map_err(|e| format!("Database backend error: {:?}", e))
 	}
@@ -49,31 +50,30 @@ impl<Block: BlockT> sp_state_machine::Storage<HasherFor<Block>> for StorageDb<Bl
 
 /// State that manages the backend database reference. Allows runtime to control the database.
 pub struct BenchmarkingState<B: BlockT> {
-	path: PathBuf,
 	root: Cell<B::Hash>,
-	state: RefCell<Option<DbState<B>>>,
+	genesis_root: B::Hash,
+	state: RefCell<Option<State<B>>>,
 	db: Cell<Option<Arc<dyn KeyValueDB>>>,
-	genesis: <DbState<B> as StateBackend<HasherFor<B>>>::Transaction,
+	genesis: HashMap<Vec<u8>, (Vec<u8>, i32)>,
+	record: Cell<Vec<Vec<u8>>>,
+	shared_cache: SharedCache<B>, // shared cache is always empty
 }
 
 impl<B: BlockT> BenchmarkingState<B> {
 	/// Create a new instance that creates a database in a temporary dir.
-	pub fn new(genesis: Storage) -> Result<Self, String> {
-		let temp_dir = PathBuf::from(std::env::temp_dir());
-		let name: String = rand::thread_rng().sample_iter(&rand::distributions::Alphanumeric).take(10).collect();
-		let path = temp_dir.join(&name);
-
+	pub fn new(genesis: Storage, _cache_size_mb: Option<usize>) -> Result<Self, String> {
 		let mut root = B::Hash::default();
-		let mut mdb = MemoryDB::<HasherFor<B>>::default();
-		sp_state_machine::TrieDBMut::<HasherFor<B>>::new(&mut mdb, &mut root);
+		let mut mdb = MemoryDB::<HashFor<B>>::default();
+		sp_state_machine::TrieDBMut::<HashFor<B>>::new(&mut mdb, &mut root);
 
-		std::fs::create_dir(&path).map_err(|_| String::from("Error creating temp dir"))?;
 		let mut state = BenchmarkingState {
 			state: RefCell::new(None),
 			db: Cell::new(None),
-			path,
 			root: Cell::new(root),
 			genesis: Default::default(),
+			genesis_root: Default::default(),
+			record: Default::default(),
+			shared_cache: new_shared_cache(0, (1, 10)),
 		};
 
 		state.reopen()?;
@@ -82,43 +82,31 @@ impl<B: BlockT> BenchmarkingState<B> {
 			child_content.data.into_iter().map(|(k, v)| (k, Some(v))),
 			child_content.child_info
 		));
-		let (root, transaction) = state.state.borrow_mut().as_mut().unwrap().full_storage_root(
+		let (root, transaction): (B::Hash, _) = state.state.borrow_mut().as_mut().unwrap().full_storage_root(
 			genesis.top.into_iter().map(|(k, v)| (k, Some(v))),
 			child_delta,
 		);
-		state.genesis = transaction.clone();
+		state.genesis = transaction.clone().drain();
+		state.genesis_root = root.clone();
 		state.commit(root, transaction)?;
+		state.record.take();
 		Ok(state)
 	}
 
 	fn reopen(&self) -> Result<(), String> {
 		*self.state.borrow_mut() = None;
-		self.db.set(None);
-		let db_config = DatabaseConfig::with_columns(1);
-		let path = self.path.to_str()
-			.ok_or_else(|| String::from("Invalid database path"))?;
-		let db = Arc::new(Database::open(&db_config, &path).map_err(|e| format!("Error opening database: {:?}", e))?);
+		let db = match self.db.take() {
+			Some(db) => db,
+			None => Arc::new(::kvdb_memorydb::create(1)),
+		};
 		self.db.set(Some(db.clone()));
 		let storage_db = Arc::new(StorageDb::<B> { db, _block: Default::default() });
-		*self.state.borrow_mut() = Some(DbState::<B>::new(storage_db, self.root.get()));
+		*self.state.borrow_mut() = Some(State::new(
+			DbState::<B>::new(storage_db, self.root.get()),
+			self.shared_cache.clone(),
+			None
+		));
 		Ok(())
-	}
-
-	fn kill(&self) -> Result<(), String> {
-		self.db.set(None);
-		*self.state.borrow_mut() = None;
-		let mut root = B::Hash::default();
-		let mut mdb = MemoryDB::<HasherFor<B>>::default();
-		sp_state_machine::TrieDBMut::<HasherFor<B>>::new(&mut mdb, &mut root);
-		self.root.set(root);
-
-		std::fs::remove_dir_all(&self.path).map_err(|_| "Error removing database dir".into())
-	}
-}
-
-impl<B: BlockT> Drop for BenchmarkingState<B> {
-	fn drop(&mut self) {
-		self.kill().ok();
 	}
 }
 
@@ -126,10 +114,10 @@ fn state_err() -> String {
 	"State is not open".into()
 }
 
-impl<B: BlockT> StateBackend<HasherFor<B>> for BenchmarkingState<B> {
-	type Error =  <DbState<B> as StateBackend<HasherFor<B>>>::Error;
-	type Transaction = <DbState<B> as StateBackend<HasherFor<B>>>::Transaction;
-	type TrieBackendStorage = <DbState<B> as StateBackend<HasherFor<B>>>::TrieBackendStorage;
+impl<B: BlockT> StateBackend<HashFor<B>> for BenchmarkingState<B> {
+	type Error =  <DbState<B> as StateBackend<HashFor<B>>>::Error;
+	type Transaction = <DbState<B> as StateBackend<HashFor<B>>>::Transaction;
+	type TrieBackendStorage = <DbState<B> as StateBackend<HashFor<B>>>::TrieBackendStorage;
 
 	fn storage(&self, key: &[u8]) -> Result<Option<Vec<u8>>, Self::Error> {
 		self.state.borrow().as_ref().ok_or_else(state_err)?.storage(key)
@@ -244,26 +232,30 @@ impl<B: BlockT> StateBackend<HasherFor<B>> for BenchmarkingState<B> {
 	}
 
 	fn as_trie_backend(&mut self)
-		-> Option<&sp_state_machine::TrieBackend<Self::TrieBackendStorage, HasherFor<B>>>
+		-> Option<&sp_state_machine::TrieBackend<Self::TrieBackendStorage, HashFor<B>>>
 	{
 		None
 	}
 
-	fn commit(&self, storage_root: <HasherFor<B> as Hasher>::Out, mut transaction: Self::Transaction)
+	fn commit(&self, storage_root: <HashFor<B> as Hasher>::Out, mut transaction: Self::Transaction)
 		-> Result<(), Self::Error>
 	{
 		if let Some(db) = self.db.take() {
 			let mut db_transaction = DBTransaction::new();
-
-			for (key, (val, rc)) in transaction.drain() {
+			let changes = transaction.drain();
+			let mut keys = Vec::with_capacity(changes.len());
+			for (key, (val, rc)) in changes {
 				if rc > 0 {
 					db_transaction.put(0, &key, &val);
 				} else if rc < 0 {
 					db_transaction.delete(0, &key);
 				}
+				keys.push(key);
 			}
+			self.record.set(keys);
 			db.write(db_transaction).map_err(|_| String::from("Error committing transaction"))?;
 			self.root.set(storage_root);
+			self.db.set(Some(db))
 		} else {
 			return Err("Trying to commit to a closed db".into())
 		}
@@ -271,16 +263,36 @@ impl<B: BlockT> StateBackend<HasherFor<B>> for BenchmarkingState<B> {
 	}
 
 	fn wipe(&self) -> Result<(), Self::Error> {
-		self.kill()?;
+		// Restore to genesis
+		let record = self.record.take();
+		if let Some(db) = self.db.take() {
+			let mut db_transaction = DBTransaction::new();
+			for key in record {
+				match self.genesis.get(&key) {
+					Some((v, _)) => db_transaction.put(0, &key, v),
+					None => db_transaction.delete(0, &key),
+				}
+			}
+			db.write(db_transaction).map_err(|_| String::from("Error committing transaction"))?;
+			self.db.set(Some(db));
+		}
+
+		self.root.set(self.genesis_root.clone());
 		self.reopen()?;
-		self.commit(self.root.get(), self.genesis.clone())?;
 		Ok(())
+	}
+
+	fn register_overlay_stats(&mut self, stats: &sp_state_machine::StateMachineStats) {
+		self.state.borrow_mut().as_mut().map(|s| s.register_overlay_stats(stats));
+	}
+
+	fn usage_info(&self) -> sp_state_machine::UsageInfo {
+		self.state.borrow().as_ref().map_or(sp_state_machine::UsageInfo::empty(), |s| s.usage_info())
 	}
 }
 
 impl<Block: BlockT> std::fmt::Debug for BenchmarkingState<Block> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "DB at {:?}", self.path)
+		write!(f, "Bench DB")
 	}
 }
-

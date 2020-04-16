@@ -16,20 +16,22 @@
 
 //! Test utilities
 
-
 use codec::Encode;
 use super::{Trait, Module, GenesisConfig, CurrentSlot};
-use sp_consensus_babe::AuthorityId;
 use sp_runtime::{
-	Perbill, PerThing, impl_opaque_keys,
+	Perbill, impl_opaque_keys,
 	testing::{Header, UintAuthorityId, Digest, DigestItem},
-	traits::{IdentityLookup, OnInitialize},
+	traits::IdentityLookup,
 };
-use sp_version::RuntimeVersion;
 use frame_system::InitKind;
-use frame_support::{impl_outer_origin, parameter_types, StorageValue, weights::Weight};
+use frame_support::{
+	impl_outer_origin, parameter_types, StorageValue,
+	traits::OnInitialize,
+	weights::Weight,
+};
 use sp_io;
 use sp_core::H256;
+use sp_consensus_vrf::schnorrkel::{RawVRFOutput, RawVRFProof};
 
 impl_outer_origin!{
 	pub enum Origin for Test  where system = frame_system {}
@@ -66,12 +68,13 @@ impl frame_system::Trait for Test {
 	type Event = ();
 	type BlockHashCount = BlockHashCount;
 	type MaximumBlockWeight = MaximumBlockWeight;
+	type DbWeight = ();
 	type AvailableBlockRatio = AvailableBlockRatio;
 	type MaximumBlockLength = MaximumBlockLength;
 	type ModuleToIndex = ();
 	type AccountData = ();
 	type OnNewAccount = ();
-	type OnReapAccount = ();
+	type OnKilledAccount = ();
 }
 
 impl_opaque_keys! {
@@ -89,6 +92,7 @@ impl pallet_session::Trait for Test {
 	type ValidatorIdOf = ();
 	type Keys = MockSessionKeys;
 	type DisabledValidatorsThreshold = DisabledValidatorsThreshold;
+	type NextSessionRotation = Babe;
 }
 
 impl pallet_timestamp::Trait for Test {
@@ -112,7 +116,7 @@ pub fn new_test_ext(authorities: Vec<DummyValidatorId>) -> sp_io::TestExternalit
 }
 
 pub fn go_to_block(n: u64, s: u64) {
-	let pre_digest = make_pre_digest(0, s, [1; 32], [0xff; 64]);
+	let pre_digest = make_pre_digest(0, s, RawVRFOutput([1; 32]), RawVRFProof([0xff; 64]));
 	System::initialize(&n, &Default::default(), &Default::default(), &pre_digest, InitKind::Full);
 	System::set_block_number(n);
 	if s > 1 {
@@ -134,15 +138,17 @@ pub fn progress_to_block(n: u64) {
 pub fn make_pre_digest(
 	authority_index: sp_consensus_babe::AuthorityIndex,
 	slot_number: sp_consensus_babe::SlotNumber,
-	vrf_output: [u8; sp_consensus_babe::VRF_OUTPUT_LENGTH],
-	vrf_proof: [u8; sp_consensus_babe::VRF_PROOF_LENGTH],
+	vrf_output: RawVRFOutput,
+	vrf_proof: RawVRFProof,
 ) -> Digest {
-	let digest_data = sp_consensus_babe::digests::RawPreDigest::Primary {
-		authority_index,
-		slot_number,
-		vrf_output,
-		vrf_proof,
-	};
+	let digest_data = sp_consensus_babe::digests::RawPreDigest::Primary(
+		sp_consensus_babe::digests::RawPrimaryPreDigest {
+			authority_index,
+			slot_number,
+			vrf_output,
+			vrf_proof,
+		}
+	);
 	let log = DigestItem::PreRuntime(sp_consensus_babe::BABE_ENGINE_ID, digest_data.encode());
 	Digest { logs: vec![log] }
 }
