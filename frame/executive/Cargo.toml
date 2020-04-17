@@ -18,11 +18,11 @@ frame-system = { version = "2.0.0-dev", default-features = false, path = "../sys
 serde = { version = "1.0.101", optional = true }
 sp-runtime = { version = "2.0.0-dev", default-features = false, path = "../../primitives/runtime" }
 sp-std = { version = "2.0.0-dev", default-features = false, path = "../../primitives/std" }
+sp-io ={ path = "../../primitives/io", version = "2.0.0-dev"}
 
 [dev-dependencies]
 hex-literal = "0.2.1"
 sp-core = { version = "2.0.0-dev", path = "../../primitives/core" }
-sp-io ={ path = "../../primitives/io", version = "2.0.0-dev"}
 pallet-indices = { version = "2.0.0-dev", path = "../indices" }
 pallet-balances = { version = "2.0.0-dev", path = "../balances" }
 pallet-transaction-payment = { version = "2.0.0-dev", path = "../transaction-payment" }

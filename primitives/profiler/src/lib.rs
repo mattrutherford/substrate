@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::thread::JoinHandle;
 use std::sync::atomic::{AtomicU64, Ordering};
-use quanta::Clock;
+use std::time::SystemTime;
 use parking_lot::Mutex;
 
 pub trait Profiler: Send {
@@ -31,7 +31,6 @@ enum SpanPhase {
 
 pub struct AsyncProfiler {
 	next_id: AtomicU64,
-	clock: Clock,
 	sender: crossbeam::channel::Sender<SpanPhase>,
 	join_handle: Option<JoinHandle<()>>,
 }
@@ -78,11 +77,16 @@ impl AsyncProfiler {
 		}));
 		AsyncProfiler {
 			next_id: AtomicU64::new(1),
-			clock: Clock::new(),
 			sender,
 			join_handle,
 		}
 	}
+}
+
+fn timestamp() -> u64 {
+	use std::{convert::{TryFrom, TryInto}, time::SystemTime};
+	let now = SystemTime::now();
+	now.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_nanos().try_into().unwrap()
 }
 
 impl Drop for AsyncProfiler {
@@ -100,7 +104,7 @@ impl Profiler for AsyncProfiler {
 			id,
 			target,
 			name,
-			time: self.clock.now(),
+			time: timestamp(),
 		};
 		if let Err(e) = self.sender.send(SpanPhase::Enter(span_datum)) {
 			eprintln!("{}", e.to_string());
@@ -109,7 +113,7 @@ impl Profiler for AsyncProfiler {
 	}
 
 	fn exit_span(&self, id: u64) {
-		let time = self.clock.now();
+		let time = timestamp();
 		if let Err(e) = self.sender.send(SpanPhase::Exit(ExitSpan { id, time })) {
 			eprintln!("{}", e.to_string());
 		};
@@ -121,7 +125,6 @@ impl Profiler for AsyncProfiler {
 /// `{target},{name},{time(ns)}`
 pub struct BasicProfiler {
 	next_id: AtomicU64,
-	clock: Clock,
 	span_data: Mutex<HashMap<u64, EnterSpan>>,
 }
 
@@ -129,7 +132,6 @@ impl BasicProfiler {
 	pub fn new() -> Self {
 		BasicProfiler {
 			next_id: AtomicU64::new(1),
-			clock: Clock::new(),
 			span_data: Mutex::new(HashMap::new()),
 		}
 	}
@@ -142,7 +144,7 @@ impl Profiler for BasicProfiler {
 			id,
 			target,
 			name,
-			time: self.clock.now(),
+			time: timestamp(),
 		};
 		self.span_data.lock().insert(id, span_datum);
 		id
@@ -151,7 +153,7 @@ impl Profiler for BasicProfiler {
 	fn exit_span(&self, id: u64) {
 		let span_datum = self.span_data.lock().remove(&id)
 			.expect("You probably passed in the wrong id; the results are invalid");
-		let time = self.clock.now() - span_datum.time;
+		let time = timestamp() - span_datum.time;
 		println!("{},{},{}",
 				 span_datum.target,
 				 span_datum.name,

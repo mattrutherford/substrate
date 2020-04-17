@@ -303,10 +303,7 @@ where
 		// Verify that the signature is good.
 
 		let uxt_span = sp_io::profiling::register_span(module_path!(), "uxt.check");
-		let xt = uxt.check(
-			check_signature,
-			&Default::default(),
-		)?;
+		let xt = uxt.check(&Default::default())?;
 		sp_io::profiling::exit_span(uxt_span);
 
 		// We don't need to make sure to `note_extrinsic` only after we know it's going to be
@@ -325,7 +322,7 @@ where
 		let dispatch_info = xt.get_dispatch_info();
 		sp_io::profiling::exit_span(dispatch_info_span);
 
-		let r = Applyable::apply::<UnsignedValidator>(xt, dispatch_info, encoded_len)?;
+		let r = Applyable::apply::<UnsignedValidator>(xt, &dispatch_info, encoded_len)?;
 
 
 		let note_applied_extrinsic_span = sp_io::profiling::register_span(module_path!(), "note_applied_extrinsic");
